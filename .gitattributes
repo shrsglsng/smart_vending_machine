@@ -1,0 +1,25 @@
+# 1. Handle everything by default
+* text=auto
+
+# 2. Explicitly mark code files as text
+*.js text
+*.json text
+*.md text
+*.html text
+*.css text
+
+# 3. Force LF for scripts (CRLF can break Linux/Android execution)
+*.sh text eol=lf
+*.bash text eol=lf
+
+# 4. Force CRLF for Windows-specific files
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 5. Ensure binary files are NEVER touched
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary

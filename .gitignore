@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Personal Progress Tracking (Antigravity Rules)
+progress.md
+task.md
+implementation_plan.md
+walkthrough.md
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Build/Dist
+dist/
+build/
+
+# Graphify & Documentation (Optional but recommended to ignore if personal)
+# graph.json
+# GRAPH_REPORT.md
+
+# Legacy/Deprecated (from old .gitignore)
+backend.md
+PHONEPE_IMPLEMENTATION_GUIDE.md
+Refund.md
+PHONEPE_API_GUIDE.md
+.kilo/
