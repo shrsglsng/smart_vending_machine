@@ -4,13 +4,30 @@
 
 A modular, hardware-agnostic, smart food vending machine system. The physical machine features 6 gravity-fed inclined racks holding up to 7 items each (FIFO). The software ecosystem manages real-time inventory locking, hardware communication via MQTT, secure payments, and role-based operations.
 
+### Multi-Tenancy, Authorization & Payment Routing
+* **Tenancy Model:** The system operates as a B2B SaaS platform. All core entities (`Users`, `Machines`, `Orders`, `Reports`) include a `tenant_id` field.
+* **Built-in Operations Tenant (AibotINK):** To support internal testing, platform prototyping, and direct revenue generation, the system features a permanent, built-in internal operations tenant (`tenant_id: "Super_admin"`) named **AibotINK** (contact email `aibotink.web@gmail.com`).
+    * **Exclusion & Security Guards:** This internal tenant is completely hidden from standard client listings in the tenants dashboard view to prevent accidental modification or administrative disruption.
+    * **Immutability Protection:** The backend API enforces strict programmatic checks to reject any disable (`POST /admin/tenant/disable`) or edit (`POST /admin/tenant/edit`) requests targeted at the `'Super_admin'` tenant.
+    * **Select Visibility:** While filtered out of standard lists, it remains fully visible in the tenant assignment selectors of the Machine Management View.
+* **Role-Based Access Control (RBAC):**
+    * `SUPER_ADMIN`: Global platform owner. Can create Tenants, provision hardware, assign/edit machines, and view cross-tenant telemetry.
+    * `TENANT_ADMIN`: Client-level access. Scoped strictly to their `tenant_id`. Manages menus, reports, and refunds for their assigned fleet.
+    * `OPERATOR`: Restocking staff scoped to a `tenant_id`. View-only inventory access.
+* **Dynamic Payment Routing:**
+    * The system supports per-tenant payment credentials.
+    * If a client provides their own PhonePe Merchant ID and Salt Key, the backend encrypts them using AES-256-GCM before storing them securely in the `Tenant` database document.
+    * During checkout (`/payment/initiate`), the backend checks the `tenant_id`. If custom keys exist, they are decrypted and used (funds route directly to the client).
+    * If no custom keys exist, the system falls back to the Platform Default keys stored in the server's `.env` file (funds route to the Super Admin).
+    * **Settlements:** For clients using the Platform Default gateway, revenue payouts are calculated and handled completely offline via manual accounting. The software does not execute automated bank transfers.
+
 ## System Architecture (4 Software Components)
 
 ### 1. Backend (Node.js & Fastify)
 
 **Role:** The central brain, database manager, and hardware communicator.
 
-**Tech Stack:** Fastify, MongoDB Atlas (Mongoose), MQTT (`mqtt` package), JWT Authentication, Axios, Resend API.
+* **Tech Stack:** Fastify, `@fastify/static` (for local image hosting), `sharp` (for image optimization), MongoDB Atlas (Mongoose), MQTT (`mqtt` client + Local Eclipse Mosquitto Broker), JWT Authentication, Axios, Resend API, Sentry (Error Tracking).
 
 **Environment Strategy:** Managed via `config.js` and `.env` to seamlessly switch between Development (PhonePe Sandbox, Dev DB) and Production.
 
@@ -23,6 +40,9 @@ A modular, hardware-agnostic, smart food vending machine system. The physical ma
 - **Device API Key Auth:** All tablet-facing endpoints require a `X-Device-Key` header. Each machine has a unique API key stored in MongoDB and baked into the APK build. Validated server-side on every request.
 - **Inventory Push via MQTT:** After every dispense completion, backend publishes updated rack inventory to `vending/machine_{ID}/inventory` so the tablet receives live stock counts without polling.
 - **Idempotency:** All mutating tablet endpoints support `X-Idempotency-Key` to prevent double-processing on network retry.
+- **Infrastructure & Optimization:**
+    * **MQTT Broker:** A local Eclipse Mosquitto instance runs on the VPS, secured with authentication, handling bi-directional TCP/WebSocket communication between the Fastify backend, ESP32 hardware, and Tablet APKs.
+    * **Image Optimization:** All Master Catalog image uploads are intercepted by the `sharp` library, resized (e.g., 600x600), and compressed into lightweight `.webp` formats before saving to the local filesystem to drastically reduce tablet bandwidth usage.
 
 ### 2. User Tablet APK (Customer Frontend — Mounted Kiosk)
 
@@ -100,50 +120,85 @@ A modular, hardware-agnostic, smart food vending machine system. The physical ma
     - If all retries fail: the **entire app UI locks** with a full-screen grey overlay and a centered popup: **"Machine Offline — Please try again later"**. No interaction is possible.
     - The tablet continues retrying in the background every 10 seconds. On first successful response, the overlay dismisses and UI restores.
     - Exception: if the tablet boots with no network at all, show the offline screen immediately after the cached menu fails to refresh.
-14. **Analytics / Heartbeat:**
-    - Tablet sends a heartbeat ping (`POST /api/v1/device/heartbeat`) every 60 seconds with: `machine_id`, `battery_level`, `app_version`, `uptime`, `last_error_message` (if any).
-    - Funnel events (`POST /api/v1/device/event`): `SESSION_START`, `ITEM_ADDED_TO_CART`, `CHECKOUT_TAPPED`, `ORDER_CREATED`, `PAYMENT_QR_SHOWN`, `PAYMENT_TIMEOUT`, `PAYMENT_CONFIRMED`, `DISPENSE_STARTED`, `DISPENSE_COMPLETED`, `JAM_REPORTED`, `IDLE_VIDEO_STARTED`.
-    - All events are fire-and-forget (no blocking). Batched locally and sent every 30 seconds to reduce requests.
+14. **Analytics & Error Tracking:**
+        * **Behavioral Telemetry (PostHog):** Tracks funnel events (`SESSION_START`, `ITEM_ADDED`, `CHECKOUT_TAPPED`, `PAYMENT_ABANDONED`). Fire-and-forget, batched locally to reduce requests.
+        * **Crash Logging (Sentry):** Captures native crashes and unhandled exceptions with full device context.
+        * **Hardware Heartbeat:** Ping (`POST /api/v1/device/heartbeat`) every 60s with `machine_id`, `battery_level`, and `app_version`.
 15. **No-PII / Receipt Policy:** The vending machine operates on a strict zero-PII (Personally Identifiable Information) policy. The system intentionally does not ask for phone numbers or emails to send digital receipts. The PhonePe app acts as the user's financial receipt, and the physical item drop acts as the fulfillment confirmation.
 
 ### 3. Admin Web Dashboard
 * **Role:** The control center for operations, financial management, and fleet provisioning.
-* **Tech Stack:** React, Tailwind CSS, protected by JWT.
-* **Key Logic:**
-    * **Machine Provisioning Flow:**
-        * Navbar contains a "Create New Machine" button.
-        * Opens a modal with fields: `machine_id`, `location`, `password`, `confirm_password`.
-        * **ID Rules:** Permanently prefixed with "V". Admin types a 2-digit number (e.g., "01"). UI enforces a live preview (e.g., "V01").
-        * **Location Rules:** Auto-capitalizes the first letter on input.
-        * **Password Rules:** No character restrictions. Frontend validates `password` === `confirm_password` before sending to the Fastify backend.
-    * **Menu Management:** Static, predefined fast food items (Idli, Vada, Samosa, etc.). No expiry tracking required. Menu data served to the tablet via API.
-    * **Report Resolution:** Views live user photos of jams/issues.
-    * **Hardware Control:** Button to lock a rack (`status: INOPERATIONAL`) which updates MongoDB and pushes an MQTT alert to the machine.
-    * **Secure Refunds:** Trigger PhonePe API refunds requiring a Transaction PIN prompt. Supports both full and partial refunds.
+* **Tech Stack & Architecture:** React, CSS custom properties, Tailwind CSS (using dual Shadcn styling presets `b3GdM5eZtK` for `SUPER_ADMIN` and `b3FNvjSkLa` for `TENANT_ADMIN` mapped to HTML `data-theme` datasets), Recharts, Sentry.
+    * **Dynamic Dark/Light Adaptation:** Supports both system auto-theming and manual override via a persistent toggle button next to the sidebar's "V" logo badge.
+* **Key Logic & User Interfaces:**
+    * **Dashboard Views & UI Theming (RBAC):**
+        * `SUPER_ADMIN` (Theme Preset: Green): Sees global metrics of all Tenants. Features a "Tenant Impersonation / God Mode" dropdown in the sidebar to browse and administer the system exactly under a client's context.
+        * `TENANT_ADMIN` (Theme Preset: Blue): Sees isolated business metrics restricted strictly to their fleet.
+    * **Advanced Analytics & Telemetry (MongoDB Aggregation):**
+        * Financial and operational charts are powered entirely by backend MongoDB aggregation pipelines.
+        * **Spoilage/Donation Ratio:** Tracks `SHIFT_CLEAROUT_DONATION` against loaded inventory to optimize kitchen prep.
+        * **Sales Velocity & Peak Hours:** Identifies high-traffic purchasing windows.
+        * **Heatmapping:** Tracks slot-level performance (e.g., eye-level vs. bottom-row conversion rates).
+    * **Tenants Administration View:**
+        * **Password Rendering Cell:** Displays passwords securely masked as `••••••••` by default. Admins can click the interactive Lucide eye-toggle button to reveal the raw credentials in plain text.
+        * **Provisioning Popup:** Allows registering a client organization with auto-generated starting passwords. Press-and-hold reveal button enables credential verification before saving.
+        * **Internal Operations Toggle:** Includes a dedicated "Register as Internal Operations (Super Admin)" checkbox. Activating this checkbox automatically provisions the permanent `Super_admin` (AibotINK) tenant with pre-filled support credentials, bypassing custom mobile/password inputs.
+        * **Assigned Fleet Management:** Selecting a tenant opens an Edit modal showing a high-density, beautifully styled array of assigned machines. Interactive close (`×`) buttons allow releasing machines dynamically. An available machines dropdown filters out already assigned machines to facilitate seamless sequential additions. Submitting modifications triggers comparative transactional updates.
+        * **Disabled Profiles Grid:** Shows soft-deleted tenants in a separate section at a lowered `opacity-75` where admins can activate the "Enable" trigger to restore operations.
+    * **Machine Management View:**
+        * **Unified Single Viewport:** Replaced old tabbed structures with a high-density, single-viewport double table presenting **Assigned** and **Unassigned** hardware fleets sequentially, featuring reactive item count badges.
+        * **Enriched Table Layout:** Displays monospaced columns for Machine ID, Assigned Tenant Business Name, auto-capitalized/title-cased Location names, grid dimension bounds in unified `RXCXD` (`rows x columns x depth`) format, and calculated maximum physical slot loading `Capacity`.
+        * **Compact Edit Modal:**
+            * *Active/Assigned Machines:* Opens a tight, single-column popover allowing quick modifications to Machine ID, Location, and Grid Dimensions.
+            * *Warehouse/Unassigned Machines:* Opens a side-by-side Unified Split-Panel Modal. Left side coordinates physical vending configurations (ID, Location, Rows, Columns, Max Depth). Right side displays Tenancy Assignment select dropdown, moving the node immediately into the Active fleet.
+    * **Master Catalog Management (Super Admin):** Interface to upload product images (stored locally on the VPS and optimized via `sharp`) and define global approved items.
+    * **Tenant Menu Configuration:** Tenants select items from the Super Admin's Master Catalog to assign to their dynamic `Row x Column` machine grid.
+    * **Secure Refunds:** Processing a PhonePe refund triggers a high-security modal requiring the admin's Transaction PIN.
+    * **Menu Dispatch & Logistics:**
+        * Tenant Admin defines slot assignments (which item goes where, and target quantities) for specific shifts (Breakfast, Lunch, Snacks).
+        * Admin clicks "Assign Menu". A popup lists available Operators under their `tenant_id`.
+        * Selecting an Operator generates a `RestockJob`, calculates the aggregated packing list (total items needed), and sends a push notification to the Operator App.
+        * Dashboard provides a real-time aggregate view of current machine inventory levels by category, enabling Admins to easily calculate kitchen preparation needs.
+    * **Time-Scoped Analytics:**
+        * Telemetry grids (Revenue, Orders, Donations) feature a unified toggle (Daily / Weekly / Monthly) that dynamically refetches aggregated data pipelines from the Fastify backend.
     
 ### 4. Operator App (Restocking)
-
-**Role:** A mobile application for the restocking team.
-
-**Tech Stack:** React Native or Flutter (or mobile-responsive web app).
-
-**Key Logic:**
-- Strict RBAC: Only sees inventory, no financial data.
-- **Bulk Restocking:** Operator selects a rack and inputs the quantity added (e.g., "+4"). System ensures quantity never exceeds the physical maximum of 7 per rack.
+* **Role:** A strictly guided, mobile-optimized application that connects physical restocking to digital dispatch.
+* **Tech Stack:** React Native or Flutter. Protected by JWT.
+* **Key Logic & Flow:**
+    * **Tenancy Isolation:** Operator logs in via their assigned Mobile Number and Password. The Fastify backend intercepts this, checks the DB, and issues a JWT tied securely to their employer's `tenant_id`. They only see jobs and machines assigned to them.
+    * **The Dispatch Notification:** Operator receives a `RestockJob` push notification (e.g., "Lunch Shift - Machine V01"). App displays the `packing_list` (aggregated totals) so the operator knows exactly what to pull from the kitchen.
+    * **Authentication & Hardware Unlock:**
+        * Operator walks to the back of the machine and scans the physical QR code (containing `machine_id` + `tenant_id`).
+        * App calls `POST /api/v1/operator/unlock`. Backend validates the active `RestockJob` and fires the MQTT `UNLOCK_DOOR` command to the ESP32 solenoid.
+        * ESP32 detects the door opening and publishes `DOOR_OPEN`. The front-facing Tablet APK instantly locks into a "Maintenance in Progress" screen to prevent user orders.
+    * * **Step-by-Step Execution Wizard:**
+        * **Phase 1: Automated Clear-Out (If `clearout_required: true`):**
+            * Operator scans the machine QR to unlock the door. 
+            * App identifies a shift change and shows a single-action screen: *"Remove all remaining items. Tap confirm when empty."*
+            * Operator taps "Machine Emptied" (`POST /api/v1/operator/clearout`).
+            * The backend securely references its own real-time inventory state, automatically zeroes out the machine slots, and logs the exact remaining quantities to `InventoryAudit` as `SHIFT_CLEAROUT_DONATION`. No manual operator counting is required.
+        * **Phase 2: Restock Protocol:**
+            * App immediately syncs with the new `slot_assignments` for the upcoming shift.
+            * Shows strictly one slot at a time (e.g., "Slot R1-C1").
+            * Displays the target item image and name. Asks: *"Target: 5. How many did you load?"*
+            * Operator inputs the actual amount loaded and taps "Next" until complete.
+    * **Completion & Reactivation:**
+        * Operator submits the final job. App instructs them to close the physical door.
+        * ESP32 limit switch detects closure, publishes `DOOR_CLOSED`. Backend syncs the new inventory.
+        * The Tablet APK drops the maintenance screen and instantly displays the updated menu and stock levels.
 
 ---
 
 ## Hardware Team Contracts (Firmware Interface)
 
-*The hardware team handles the ESP32 and Arduino firmware. The software team guarantees the following communication contracts:*
 
 | Direction | MQTT Topic | Payload |
 |-----------|-----------|---------|
-| Backend → ESP32 (Dispense) | `vending/machine_{ID}/commands` | `{"action": "DISPENSE", "rack": 2, "orderId": "ORD_123", "itemIndex": 1, "totalItems": 4}` |
-| Backend → ESP32 (Lock Rack) | `vending/machine_{ID}/commands` | `{"action": "LOCK_RACK", "rack": 2}` |
-| Backend → Tablet (Inventory Push) | `vending/machine_{ID}/inventory` | `{"racks": [{"rack_number": 1, "quantity": 5, "status": "ACTIVE"}, ...]}` |
-| ESP32 → Backend (Dispense Success) | `vending/machine_{ID}/status` | `{"status": "DISPENSE_COMPLETED", "orderId": "ORD_123", "rack": 2}` |
-| ESP32 → Backend (Dispense Jam) | `vending/machine_{ID}/status` | `{"status": "JAMMED", "rack": 2, "orderId": "ORD_123"}` |
+| Backend → ESP32 (Dispense) | `vending/machine_{ID}/commands` | `{"action": "DISPENSE", "rack": 2, "orderId": "ORD_123"}` |
+| Backend → ESP32 (Door Control) | `vending/machine_{ID}/commands` | `{"action": "UNLOCK_DOOR", "operatorId": "OP_123"}` |
+| ESP32 → Backend (Door Status) | `vending/machine_{ID}/status` | `{"status": "DOOR_OPEN"}` or `{"status": "DOOR_CLOSED"}` |
+| ESP32 → Backend (Dispense Ack) | `vending/machine_{ID}/status` | `{"status": "DISPENSE_COMPLETED", "orderId": "ORD_123", "rack": 2}` |
 
 **Sequential Dispense Protocol:**
 1. Backend sends DISPENSE for item 1 → waits for `DISPENSE_COMPLETED` ack → sends item 2 → ...
@@ -155,29 +210,57 @@ A modular, hardware-agnostic, smart food vending machine system. The physical ma
 
 ## Database Schemas (Mongoose)
 
-### 1. Machine
-
+### 1. Tenant
 ```javascript
-machine_id: String (Unique)
-device_api_key: String (Hashed, generated on machine creation)
-racks: [{
-  rack_number: Number (1-6),
-  item_id: String,
-  item_name: String,
-  item_description: String,
-  item_image_url: String,
-  price_paise: Number,
-  quantity: Number (0-7),
-  status: 'ACTIVE' | 'INOPERATIONAL'
-}]
-idle_video_urls: [String]            // URLs of videos to play during idle
-min_supported_app_version: Number    // versionCode floor for tablet APK
+tenant_id: String (Unique)           // "Super_admin" or TEN_<timestamp>
+business_name: String
+contact_email: String
+is_custom_gateway_active: Boolean
+status: String (ACTIVE | DISABLED)   // ACTIVE or DISABLED status
+password: String                     // Plaintext password for platform owner visibility
+payment_config: String               // Stored encrypted on disk as iv:ciphertext:tag (Transparent AES-256-GCM hooks)
+createdAt: Date
 ```
 
-### 2. Order (Revised for Multi-Item Cart)
+### 2. Master Catalog (Super Admin Only)
+```javascript
+item_id: String (Unique)
+item_name: String
+item_description: String
+image_path: String                   // Path to local VPS storage (e.g., /uploads/catalog/idli.webp)
+default_price_paise: Number          // Tenants can override this price
+createdAt: Date
+```
+
+### 3. Machine
+```javascript
+tenant_id: String                    // Reverts to 'TEN_PLATFORM_ROOT' if unassigned
+machine_id: String (Unique)          // Prefix "V" followed strictly by digits (e.g., V05)
+device_api_key: String (Hashed)
+assignment_status: Enum ['ACTIVE', 'UNASSIGNED', 'MAINTENANCE'] // Tracks operational lifecycle
+location: String                     // Title-cased placement name (auto-formatted)
+grid_config: {                       
+    rows: Number,
+    columns: Number,
+    max_depth: Number
+}
+slots: [{                            
+    row: Number,
+    column: Number,
+    slot_id: String,                 // e.g. "R1-C2"
+    item_id: String,                 
+    quantity: Number,                // Quantities are validated server-side to not exceed grid_config.max_depth
+    status: 'ACTIVE' | 'INOPERATIONAL'
+}]
+idle_video_urls: [String]
+min_supported_app_version: Number
+```
+
+### 4. Order (Revised for Multi-Item Cart)
 
 ```javascript
-order_id: String (Unique)            // ORD__
+tenant_id: String
+order_id: String (Unique)           // ORD_<timestamp>_<random>
 idempotency_key: String (Unique)     // Client-generated UUID, hashed index
 machine_id: String
 items: [{
@@ -203,19 +286,22 @@ status: Enum [
 createdAt: Date (TTL index: 600s)
 ```
 
-### 3. User
+### 5. User
 
 ```javascript
-email: String (Unique)
-password: String (Hashed)
-role: Enum (ADMIN | OPERATOR)
-transactionPin: String (Hashed)
+tenant_id: String                    // Bound to client tenant, or 'TEN_PLATFORM_ROOT' for Super Admin
+email: String (Unique, Sparse)       // Used exclusively by Super Admin (allows multiple null/omitted users)
+mobile_number: String (Unique, Sparse) // Used by TENANT_ADMIN and OPERATOR (allows multiple null/omitted users)
+password: String (Hashed)            // Bcrypt-hashed credentials
+role: Enum (SUPER_ADMIN | TENANT_ADMIN | OPERATOR)
+transactionPin: String (Hashed)      // Bcrypt-hashed secondary refund auth pin
 ```
 
-### 4. Report
+### 6. Report
 
 ```javascript
-report_id: String (Unique)           // REP_
+tenant_id: String
+report_id: String (Unique)         // REP_<timestamp>
 order_id: String
 machine_id: String
 issueType: String                    // JAM, MISSING_ITEM, WRONG_ITEM_DISPENSED, OTHER
@@ -225,7 +311,7 @@ status: 'PENDING' | 'RESOLVED_REFUNDED'
 undispensed_items: [{ rack_number, item_name, quantity, price_paise }]
 ```
 
-### 5. AnalyticsEvent
+### 7. AnalyticsEvent
 
 ```javascript
 event_id: String (Unique)
@@ -234,7 +320,49 @@ event_type: String                   // SESSION_START, ITEM_ADDED_TO_CART, ...
 payload: Mixed                       // event-specific data
 createdAt: Date (TTL index: 30 days)
 ```
+### 8. RestockJob
+```javascript
+tenant_id: String
+job_id: String (Unique)
+machine_id: String
+operator_id: String (References User)
+status: Enum ['PENDING', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']
+shift_type: Enum ['BREAKFAST', 'LUNCH', 'SNACKS', 'ADHOC']
+clearout_required: Boolean           // True for shift changes, False for mid-shift top-ups
+clearout_list: [{                    // Expected items to be removed and donated
+    slot_id: String,
+    item_id: String,
+    expected_quantity: Number,
+    actual_removed_quantity: Number  // Auto-filled by backend during 1-Click Flush
+}]
+packing_list: [{                     // Aggregated totals for the operator to pack
+    item_id: String,
+    item_name: String,
+    total_quantity_needed: Number
+}]
+slot_assignments: [{                 // Exact map of where things go
+    slot_id: String,
+    item_id: String,
+    target_quantity: Number,
+    actual_quantity_loaded: Number   // Filled by Operator during execution
+}]
+createdAt: Date
+completedAt: Date
+```
 
+### 9. InventoryAudit
+```javascript
+tenant_id: String
+operator_id: String (References User)
+machine_id: String
+slot_id: String
+item_id: String
+action_type: Enum ['RESTOCK', 'SHIFT_CLEAROUT_DONATION', 'SPOILAGE', 'ADMIN_ADJUSTMENT']
+quantity_changed: Number             // Positive for restock, Negative for clearout
+previous_quantity: Number
+new_quantity: Number
+createdAt: Date
+```
 ---
 
 ## API Endpoints
@@ -255,14 +383,24 @@ createdAt: Date (TTL index: 30 days)
 | `POST` | `/api/v1/device/heartbeat` | No | Health ping with device telemetry. |
 | `POST` | `/api/v1/device/event` | No | Funnel analytics event (fire-and-forget). |
 
-### Admin / Auth Endpoints
+### Admin / Auth / Operator Endpoints
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| `POST` | `/api/v1/auth/login` | None | Admin login, returns JWT |
-| `POST` | `/api/v1/admin/rack/lock` | JWT (ADMIN) | Lock a rack |
-| `POST` | `/api/v1/admin/refund` | JWT (ADMIN) + PIN | Process refund |
-| `GET` | `/api/v1/admin/transaction/:txnId/status` | JWT (ADMIN) | Check transaction status |
+| `POST` | `/api/v1/auth/login` | None | Accepts `identifier` (Email for Super Admin, Mobile for Tenants/Operators) and `password`. Returns JWT. |
+| `POST` | `/api/v1/admin/tenant/create` | JWT (SUPER_ADMIN) | Creates tenant and admin user atomically. Supports `is_internal` flag for `'Super_admin'`. |
+| `POST` | `/api/v1/admin/tenant/edit` | JWT (SUPER_ADMIN) | Updates a tenant and syncs its machine fleet via comparative atomic syncing (`assigned_machines` array). Immutable for `'Super_admin'`. |
+| `POST` | `/api/v1/admin/tenant/enable` | JWT (SUPER_ADMIN) | Re-enables / activates a disabled B2B tenant profile. |
+| `POST` | `/api/v1/admin/tenant/disable` | JWT (SUPER_ADMIN) | Soft-deletes a tenant, cascadingly unassigning all their hardware to warehouse status. Immutable for `'Super_admin'`. |
+| `GET` | `/api/v1/admin/tenants` | JWT (SUPER_ADMIN) | Retrieves full list of tenants enriched with status, mobile number, assigned machines, and plaintext starting password. |
+| `GET` | `/api/v1/admin/machines/available` | JWT (SUPER_ADMIN) | Retrieves an array of all unassigned machine_id strings. |
+| `GET` | `/api/v1/admin/machines` | JWT (SUPER_ADMIN) | Retrieves list of all machine fleet entries, resolving dynamic tenant business names. |
+| `POST` | `/api/v1/admin/machine/create` | JWT (SUPER_ADMIN) | Creates a new machine. Enforces uppercase formatted `V\d+` ID masks, auto-capitalizes location, and auto-generates device keys. |
+| `POST` | `/api/v1/admin/machine/edit` | JWT (SUPER_ADMIN) | Modifies machine details, layout config, and tenancy assignments. Auto-capitalizes locations. |
+| `POST` | `/api/v1/admin/machine/unassign` | JWT (SUPER_ADMIN) | Revokes a machine from a tenant, sets tenant_id to platform root, and status to UNASSIGNED. |
+| `POST` | `/api/v1/admin/operator/create` | JWT (ADMIN) | Tenant Admins generate Operator accounts (Mobile + Password) with inherited `tenant_id`. |
+| `POST` | `/api/v1/admin/rack/lock` | JWT (ADMIN) | Lock or unlock a specific rack. |
+| `POST` | `/api/v1/admin/refund` | JWT (ADMIN) + PIN | Process PhonePe refund with secondary `transactionPin` validation. |
 
 ### Deprecated Endpoints
 
@@ -320,14 +458,15 @@ createdAt: Date (TTL index: 30 days)
 │  → POST /machine/dispense-queue                                 │
 │  → Backend sends MQTT DISPENSE → waits for ack → next item      │
 │  → Polls /dispense-status (every 1s) for progress UI:           │
-│    "✓ Idli  ✓ Vada  ⟳ Dosa (dispensing)  ⏳ Chips"              │
+│    "✓ Idli  ✓ Vada  ⟳ Dosa (dispensing)  ⏳ Chips"             │
 ├─────────────────────────────────────────────────────────────────┤
 │  STEP 7: Completion / Jam                                       │
 │  ALL OK: "Enjoy your meal!" → return to menu (refetch menu)     │
-│  PARTIAL JAM: "2/4 dispensed. Report missing items?"            │
-│    → "Report" opens camera + issue form                         │
-│    → Backend marks for partial refund, alerts admin via Resend  │
-│  FULL JAM: "Machine error. Please report." → Report flow        │
+│  PARTIAL/FULL JAM: "Machine error. Please report."              │
+│    → Tablet displays a dynamic WhatsApp QR Code                 │
+│    → QR links to `wa.me/YOUR_NUMBER?text=Issue+Machine+V01...`  │
+│    → User scans with phone, sends photo directly to Support.    │
+│    → Backend logs the failed dispense for Admin partial refund. │
 ├─────────────────────────────────────────────────────────────────┤
 │  POST-DISPENSE: Backend publishes updated inventory via MQTT    │
 │  Tablet receives → updates carousel stock counts in real-time   │
@@ -411,6 +550,3 @@ createdAt: Date (TTL index: 30 days)
 ### 17. Video Playback Failure
 - **Scenario:** Idle video URLs are unreachable or media playback fails.
 - **Solution:** Skip failed video, log error to heartbeat payload, attempt next video in playlist. If all videos fail, fall back to static promotional image slideshow.
-```
-
-This Markdown document is now ready for AI IDEs to study and understand your complete project architecture.
