@@ -5,6 +5,7 @@ import * as z from "zod"
 import { useDispatch } from "react-redux"
 import { useNavigate } from "react-router-dom"
 import { ShieldCheck, Loader2, AlertCircle, Eye, EyeOff } from "lucide-react"
+import { motion, AnimatePresence } from "framer-motion"
 
 import api from "../services/api"
 import { setCredentials } from "../store/authSlice"
@@ -98,7 +99,12 @@ export function Login() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
-      <div className="w-full max-w-md space-y-6">
+      <motion.div
+        className="w-full max-w-md space-y-6"
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ type: "spring", stiffness: 100, damping: 14 }}
+      >
         <Card className="border border-border bg-card shadow-xl rounded-2xl">
           <CardHeader className="space-y-1.5 border-b border-border/50 p-6">
             <CardTitle className="text-xl font-bold text-foreground">Sign In</CardTitle>
@@ -108,15 +114,24 @@ export function Login() {
           </CardHeader>
 
           <CardContent className="p-6 pt-5">
-            {errorMsg && (
-              <div className="mb-4 flex items-start gap-2.5 rounded-lg border border-red-200 bg-red-50 p-3.5 text-sm text-red-600 animate-in fade-in slide-in-from-top-2 duration-200">
-                <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-                <div className="flex flex-col gap-0.5">
-                  <span className="font-bold">Authentication Failure</span>
-                  <span>{errorMsg}</span>
-                </div>
-              </div>
-            )}
+            <AnimatePresence mode="wait">
+              {errorMsg && (
+                <motion.div
+                  key="login-error"
+                  initial={{ opacity: 0, height: 0, y: -10 }}
+                  animate={{ opacity: 1, height: "auto", y: 0 }}
+                  exit={{ opacity: 0, height: 0, y: -10 }}
+                  transition={{ duration: 0.2 }}
+                  className="mb-4 flex items-start gap-2.5 rounded-lg border border-red-200 bg-red-50 p-3.5 text-sm text-red-600 overflow-hidden"
+                >
+                  <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <div className="flex flex-col gap-0.5">
+                    <span className="font-bold">Authentication Failure</span>
+                    <span>{errorMsg}</span>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -170,25 +185,30 @@ export function Login() {
                   )}
                 />
 
-                <Button
-                  type="submit"
-                  disabled={isLoading}
-                  className="w-full h-10 mt-6 bg-primary text-primary-foreground hover:opacity-90 transition-opacity font-bold shadow-sm cursor-pointer"
+                <motion.div
+                  whileHover={{ scale: 1.015 }}
+                  whileTap={{ scale: 0.985 }}
                 >
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Authenticating Account...
-                    </>
-                  ) : (
-                    "Access Platform"
-                  )}
-                </Button>
+                  <Button
+                    type="submit"
+                    disabled={isLoading}
+                    className="w-full h-10 mt-6 bg-primary text-primary-foreground hover:opacity-90 transition-opacity font-bold shadow-sm cursor-pointer"
+                  >
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Authenticating Account...
+                      </>
+                    ) : (
+                      "Access Platform"
+                    )}
+                  </Button>
+                </motion.div>
               </form>
             </Form>
           </CardContent>
         </Card>
-      </div>
+      </motion.div>
     </div>
   )
 }

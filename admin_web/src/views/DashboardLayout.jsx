@@ -10,15 +10,17 @@ import {
   Building,
   Sun,
   Moon,
+  Utensils,
 } from "lucide-react"
 
 import { logout } from "../store/authSlice"
+import { motion, AnimatePresence } from "framer-motion"
 
 export function DashboardLayout() {
   const dispatch = useDispatch()
   const navigate = useNavigate()
   const location = useLocation()
-
+  
   // Dynamic Dark Mode State persisted to localStorage
   const [isDarkMode, setIsDarkMode] = React.useState(() => {
     return localStorage.getItem("theme") === "dark"
@@ -57,6 +59,7 @@ export function DashboardLayout() {
       items: [
         { label: "Tenants", path: "/dashboard/tenants", icon: Building },
         { label: "Machines", path: "/dashboard/machines", icon: Cpu },
+        { label: "Food items", path: "/dashboard/food-items", icon: Utensils },
       ],
     },
     {
@@ -80,13 +83,15 @@ export function DashboardLayout() {
             </div>
             
             {/* Dynamic Theme Toggle Button */}
-            <button
+            <motion.button
+              whileHover={{ scale: 1.1, rotate: 12 }}
+              whileTap={{ scale: 0.9 }}
               onClick={toggleDarkMode}
               className="flex h-8 w-8 items-center justify-center rounded-xl border border-sidebar-border bg-sidebar text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-all duration-200 focus-visible:outline-none cursor-pointer"
               title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
             >
               {isDarkMode ? <Sun className="h-4 w-4 text-amber-500 animate-pulse" /> : <Moon className="h-4 w-4" />}
-            </button>
+            </motion.button>
           </div>
 
           {/* Sidebar Nav Groups */}
@@ -101,17 +106,22 @@ export function DashboardLayout() {
                     const Icon = item.icon
                     const isActive = location.pathname === item.path
                     return (
-                      <Link
+                      <motion.div
                         key={item.path}
-                        to={item.path}
-                        className={`flex items-center gap-3 rounded-xl px-3 py-2 text-xs font-bold transition-all duration-200 ${isActive
-                          ? "bg-primary/10 text-primary border-l-3 border-primary rounded-l-none pl-2.5"
-                          : "text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                          }`}
+                        whileHover={{ x: isActive ? 0 : 4 }}
+                        whileTap={{ scale: 0.985 }}
                       >
-                        <Icon className="h-4 w-4 shrink-0" />
-                        <span>{item.label}</span>
-                      </Link>
+                        <Link
+                          to={item.path}
+                          className={`flex items-center gap-3 rounded-xl px-3 py-2 text-xs font-bold transition-all duration-200 ${isActive
+                            ? "bg-primary/10 text-primary border-l-3 border-primary rounded-l-none pl-2.5"
+                            : "text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                            }`}
+                        >
+                          <Icon className="h-4 w-4 shrink-0" />
+                          <span>{item.label}</span>
+                        </Link>
+                      </motion.div>
                     )
                   })}
                 </nav>
@@ -128,19 +138,31 @@ export function DashboardLayout() {
             <p className="text-[10px] font-medium text-sidebar-foreground/60 break-all truncate" title="aibotink.web@gmail.com">aibotink.web@gmail.com</p>
           </div>
 
-          <button
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
             onClick={handleLogout}
             className="flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-destructive bg-destructive/10 hover:bg-destructive/20 hover:text-destructive transition-all duration-200 cursor-pointer font-mono"
           >
             <LogOut className="h-3.5 w-3.5" />
             <span>Sign Out</span>
-          </button>
+          </motion.button>
         </div>
       </aside>
 
       <div className="ml-64 flex flex-1 flex-col h-screen overflow-y-auto bg-background transition-colors duration-200">
         <main className="flex-1 p-6 md:p-8">
-          <Outlet />
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={location.pathname}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              transition={{ duration: 0.28, ease: "easeOut" }}
+            >
+              <Outlet />
+            </motion.div>
+          </AnimatePresence>
         </main>
       </div>
     </div>

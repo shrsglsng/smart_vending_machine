@@ -87,7 +87,7 @@ function DialogContent({ className, children, ...props }) {
         role="dialog"
         aria-modal="true"
         className={cn(
-          "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-6 border border-border bg-card text-card-foreground p-6 shadow-2xl rounded-2xl focus:outline-none sm:max-w-[425px]",
+          "fixed left-[50%] top-[50%] z-50 flex flex-col w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-6 border border-border bg-card text-card-foreground p-6 shadow-2xl rounded-2xl focus:outline-none sm:max-w-[425px]",
           className
         )}
         {...props}

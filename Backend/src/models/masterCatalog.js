@@ -23,6 +23,17 @@ const MasterCatalogSchema = new mongoose.Schema({
     required: true,
     min: 0,
   },
+  item_description: {
+    type: String,
+    default: '',
+    trim: true,
+  },
+  category: {
+    type: String,
+    enum: ['BREAKFAST', 'LUNCH', 'SNACK', ''],
+    default: '',
+    trim: true,
+  },
 }, {
   timestamps: true,
 });

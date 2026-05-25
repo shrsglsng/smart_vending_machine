@@ -1,10 +1,37 @@
 import React, { useState, useEffect } from "react"
 import { ShieldCheck, Eye, EyeOff, Loader2, AlertCircle, Plus, X } from "lucide-react"
+import { motion } from "framer-motion"
 
 import api from "../services/api"
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table"
+
+const MotionTableBody = motion(TableBody)
+const MotionTableRow = motion(TableRow)
+
+const tableContainerVariants = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.04
+    }
+  }
+}
+
+const rowVariants = {
+  hidden: { opacity: 0, x: -8 },
+  show: {
+    opacity: 1,
+    x: 0,
+    transition: {
+      type: "spring",
+      stiffness: 120,
+      damping: 15
+    }
+  }
+}
 import {
   Dialog,
   DialogContent,
@@ -454,20 +481,21 @@ export function TenantsView() {
 
               {!isInternal && (
                 <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider pl-1">Auto Generated Password</label>
                   <div className="relative">
                     <Input
                       required
                       readOnly
                       type={showPassword ? "text" : "password"}
                       value={password}
-                      className="h-10 pr-10 border-border rounded-lg text-foreground bg-background"
+                      className="h-10 pr-10 border-border rounded-lg text-foreground bg-background font-mono font-semibold"
                     />
                     <button
                       type="button"
                       onMouseDown={handleRevealPassword}
                       onMouseUp={handleMaskPassword}
                       onMouseLeave={handleMaskPassword}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors cursor-pointer focus:outline-none p-0.5"
                     >
                       {showPassword ? (
                         <EyeOff className="h-4.5 w-4.5" />
@@ -475,6 +503,9 @@ export function TenantsView() {
                         <Eye className="h-4.5 w-4.5" />
                       )}
                     </button>
+                  </div>
+                  <div className="text-[9px] text-muted-foreground px-1">
+                    Hold eye icon to securely display auto-generated password credentials.
                   </div>
                 </div>
               )}
@@ -515,7 +546,7 @@ export function TenantsView() {
               <TableHead className="font-bold text-muted-foreground text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
-          <TableBody>
+          <MotionTableBody variants={tableContainerVariants} initial="hidden" animate="show">
             {activeTenants.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={7} className="text-center py-8 text-muted-foreground font-medium">
@@ -524,7 +555,7 @@ export function TenantsView() {
               </TableRow>
             ) : (
               activeTenants.map((tenant) => (
-                <TableRow key={tenant.id} className="hover:bg-muted/30">
+                <MotionTableRow key={tenant.id} variants={rowVariants} className="hover:bg-muted/30">
                   <TableCell className="font-bold text-foreground truncate max-w-[150px]" title={tenant.business_name}>{tenant.business_name}</TableCell>
                   <TableCell className="font-mono text-xs text-muted-foreground font-semibold truncate max-w-[100px]" title={tenant.tenant_id}>{tenant.tenant_id}</TableCell>
                   <TableCell className="text-muted-foreground truncate max-w-[150px]" title={tenant.contact_email}>{tenant.contact_email}</TableCell>
@@ -553,10 +584,10 @@ export function TenantsView() {
                       </Button>
                     </div>
                   </TableCell>
-                </TableRow>
+                </MotionTableRow>
               ))
             )}
-          </TableBody>
+          </MotionTableBody>
         </Table>
       </div>
 
@@ -578,7 +609,7 @@ export function TenantsView() {
                 <TableHead className="font-bold text-muted-foreground text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
-            <TableBody>
+            <MotionTableBody variants={tableContainerVariants} initial="hidden" animate="show">
               {disabledTenants.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center py-8 text-muted-foreground font-medium">
@@ -587,7 +618,7 @@ export function TenantsView() {
                 </TableRow>
               ) : (
                 disabledTenants.map((tenant) => (
-                  <TableRow key={tenant.id} className="hover:bg-muted/30 opacity-75">
+                  <MotionTableRow key={tenant.id} variants={rowVariants} className="hover:bg-muted/30 opacity-75">
                     <TableCell className="font-bold text-foreground truncate max-w-[150px]" title={tenant.business_name}>{tenant.business_name}</TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground font-semibold truncate max-w-[100px]" title={tenant.tenant_id}>{tenant.tenant_id}</TableCell>
                     <TableCell className="text-muted-foreground truncate max-w-[150px]" title={tenant.contact_email}>{tenant.contact_email}</TableCell>
@@ -616,10 +647,10 @@ export function TenantsView() {
                         </Button>
                       </div>
                     </TableCell>
-                  </TableRow>
+                  </MotionTableRow>
                 ))
               )}
-            </TableBody>
+            </MotionTableBody>
           </Table>
         </div>
       </div>

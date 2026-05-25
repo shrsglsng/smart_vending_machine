@@ -8,7 +8,6 @@ const config = {
   MONGO_URI: process.env.MONGO_URI,
   JWT_SECRET: process.env.JWT_SECRET,
   ENCRYPTION_KEY: process.env.ENCRYPTION_KEY,
-  SENTRY_DSN: process.env.SENTRY_DSN || null,
   MQTT_BROKER_URL: process.env.MQTT_BROKER_URL,
   RESEND_API_KEY: process.env.RESEND_API_KEY,
   ADMIN_EMAIL: process.env.ADMIN_EMAIL,

@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const Tenant = require('../models/tenant');
 const User = require('../models/user');
 const Machine = require('../models/machine');
+const RestockJob = require('../models/restockJob');
 const requireTenant = require('../middlewares/requireTenant');
 const requireSuperAdmin = require('../middlewares/requireSuperAdmin');
 
@@ -243,6 +244,53 @@ async function adminRoutes(fastify, options) {
       reply.status(500).send({
         error: 'InternalServerError',
         message: 'Failed to unassign machine.'
+      });
+    }
+  });
+
+  // 3.5. Delete Machine (Super Admin Only)
+  // POST /api/v1/admin/machine/delete
+  fastify.post('/admin/machine/delete', {
+    preHandler: [requireTenant, requireSuperAdmin]
+  }, async (request, reply) => {
+    try {
+      const { machine_id } = request.body || {};
+      if (!machine_id) {
+        reply.status(400).send({
+          error: 'BadRequest',
+          message: 'Missing required field: machine_id is required.'
+        });
+        return;
+      }
+
+      const machine = await Machine.findOne({ machine_id });
+      if (!machine) {
+        reply.status(404).send({
+          error: 'NotFound',
+          message: `Machine with ID ${machine_id} not found.`
+        });
+        return;
+      }
+
+      // Safety Guard: Only unassigned machines can be deleted
+      if (machine.assignment_status !== 'UNASSIGNED' || machine.tenant_id !== 'TEN_PLATFORM_ROOT') {
+        reply.status(400).send({
+          error: 'BadRequest',
+          message: 'Safety Restriction: Only unassigned machines currently sitting in the warehouse fleet can be deleted. Please unassign the machine first.'
+        });
+        return;
+      }
+
+      await Machine.deleteOne({ machine_id });
+
+      reply.status(200).send({
+        message: `Machine ${machine_id} successfully deleted from the database fleet.`
+      });
+    } catch (error) {
+      fastify.log.error(error);
+      reply.status(500).send({
+        error: 'InternalServerError',
+        message: 'Failed to delete machine.'
       });
     }
   });
@@ -897,6 +945,209 @@ async function adminRoutes(fastify, options) {
       reply.status(500).send({
         error: 'InternalServerError',
         message: error.message || 'Failed to update machine.'
+      });
+    }
+  });
+
+  // 10. Get Operators (Tenant Admin Only)
+  // GET /api/v1/admin/operators
+  fastify.get('/admin/operators', {
+    preHandler: [requireTenant]
+  }, async (request, reply) => {
+    try {
+      let tenant_id = request.user.tenant_id;
+      if (request.user.role === 'SUPER_ADMIN' && request.query.tenant_id) {
+        tenant_id = request.query.tenant_id;
+      }
+      const operators = await User.find({ tenant_id, role: 'OPERATOR' }, 'mobile_number role createdAt');
+      reply.status(200).send(operators);
+    } catch (error) {
+      fastify.log.error(error);
+      reply.status(500).send({
+        error: 'InternalServerError',
+        message: 'Failed to retrieve operator accounts.'
+      });
+    }
+  });
+
+  // 11. Get Machine Slot Configuration
+  // GET /api/v1/admin/machine/slots/:machineId
+  fastify.get('/admin/machine/slots/:machineId', {
+    preHandler: [requireTenant]
+  }, async (request, reply) => {
+    try {
+      const { machineId } = request.params;
+      const tenant_id = request.user.tenant_id;
+
+      const machine = await Machine.findOne({ machine_id: machineId });
+      if (!machine) {
+        reply.status(404).send({
+          error: 'NotFound',
+          message: `Machine ${machineId} not found.`
+        });
+        return;
+      }
+
+      if (request.user.role !== 'SUPER_ADMIN' && machine.tenant_id !== tenant_id) {
+        reply.status(403).send({
+          error: 'Forbidden',
+          message: 'Access denied: Machine is assigned to another tenant context.'
+        });
+        return;
+      }
+
+      reply.status(200).send({
+        machine_id: machine.machine_id,
+        tenant_id: machine.tenant_id,
+        grid_config: machine.grid_config,
+        slots: machine.slots || []
+      });
+    } catch (error) {
+      fastify.log.error(error);
+      reply.status(500).send({
+        error: 'InternalServerError',
+        message: 'Failed to retrieve machine slot configurations.'
+      });
+    }
+  });
+
+  // 12. Create Restock Job
+  // POST /api/v1/admin/machine/restock-job
+  fastify.post('/admin/machine/restock-job', {
+    preHandler: [requireTenant]
+  }, async (request, reply) => {
+    try {
+      const { machine_id, operator_id, shift_type, clearout_required, slot_assignments } = request.body || {};
+      const tenant_id = request.user.tenant_id;
+
+      if (!machine_id || !operator_id || !shift_type || !slot_assignments || !Array.isArray(slot_assignments)) {
+        reply.status(400).send({
+          error: 'BadRequest',
+          message: 'Missing required fields: machine_id, operator_id, shift_type, and slot_assignments (array) are required.'
+        });
+        return;
+      }
+
+      // 1. Verify Machine
+      const machine = await Machine.findOne({ machine_id });
+      if (!machine) {
+        reply.status(404).send({
+          error: 'NotFound',
+          message: `Machine ${machine_id} not found.`
+        });
+        return;
+      }
+
+      if (request.user.role !== 'SUPER_ADMIN' && machine.tenant_id !== tenant_id) {
+        reply.status(403).send({
+          error: 'Forbidden',
+          message: 'Access denied: Machine is assigned to another tenant context.'
+        });
+        return;
+      }
+
+      // 2. Verify Operator
+      const operator = await User.findOne({ _id: operator_id, role: 'OPERATOR' });
+      if (!operator) {
+        reply.status(404).send({
+          error: 'NotFound',
+          message: 'Operator account not found or invalid role.'
+        });
+        return;
+      }
+
+      if (request.user.role !== 'SUPER_ADMIN' && operator.tenant_id !== tenant_id) {
+        reply.status(403).send({
+          error: 'Forbidden',
+          message: 'Access denied: Operator is linked to another tenant.'
+        });
+        return;
+      }
+
+      // 3. Formulate clearout list
+      const clearout_list = [];
+      if (clearout_required !== false) {
+        for (const slot of machine.slots) {
+          if (slot.item_id && slot.quantity > 0) {
+            clearout_list.push({
+              slot_id: slot.slot_id,
+              item_id: slot.item_id,
+              expected_quantity: slot.quantity,
+              actual_removed_quantity: null
+            });
+          }
+        }
+      }
+
+      // 4. Formulate packing list
+      const MasterCatalog = require('../models/masterCatalog');
+      const packingMap = {};
+
+      for (const assign of slot_assignments) {
+        const { slot_id, item_id, target_quantity } = assign;
+        if (!slot_id || !item_id || target_quantity === undefined) {
+          reply.status(400).send({
+            error: 'BadRequest',
+            message: 'Invalid slot assignment details. Ensure slot_id, item_id, and target_quantity are set.'
+          });
+          return;
+        }
+
+        if (target_quantity > machine.grid_config.max_depth) {
+          reply.status(400).send({
+            error: 'BadRequest',
+            message: `Target quantity for slot ${slot_id} (${target_quantity}) exceeds machine max depth capacity (${machine.grid_config.max_depth}).`
+          });
+          return;
+        }
+
+        if (target_quantity > 0) {
+          if (!packingMap[item_id]) {
+            packingMap[item_id] = 0;
+          }
+          packingMap[item_id] += Number(target_quantity);
+        }
+      }
+
+      const packing_list = [];
+      for (const itemId of Object.keys(packingMap)) {
+        const catalogItem = await MasterCatalog.findOne({ item_id: itemId });
+        packing_list.push({
+          item_id: itemId,
+          item_name: catalogItem ? catalogItem.item_name : 'Unknown Dish',
+          total_quantity_needed: packingMap[itemId]
+        });
+      }
+
+      const job_id = `JOB_${Date.now()}`;
+
+      const job = await RestockJob.create({
+        tenant_id: machine.tenant_id,
+        job_id,
+        machine_id,
+        operator_id: operator._id,
+        status: 'PENDING',
+        shift_type,
+        clearout_required: clearout_required !== false,
+        clearout_list,
+        packing_list,
+        slot_assignments: slot_assignments.map(a => ({
+          slot_id: a.slot_id,
+          item_id: a.item_id,
+          target_quantity: Number(a.target_quantity),
+          actual_quantity_loaded: null
+        }))
+      });
+
+      reply.status(201).send({
+        message: 'Restock job successfully created and dispatched.',
+        job
+      });
+    } catch (error) {
+      fastify.log.error(error);
+      reply.status(500).send({
+        error: 'InternalServerError',
+        message: error.message || 'Failed to dispatch restock job.'
       });
     }
   });

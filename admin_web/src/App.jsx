@@ -6,8 +6,10 @@ import { DashboardLayout } from "./views/DashboardLayout"
 import { DashboardView } from "./views/DashboardView"
 import { TenantsView } from "./views/TenantsView"
 import { MachinesView } from "./views/MachinesView"
+import { MachineConfigureView } from "./views/MachineConfigureView"
 import { OrdersView } from "./views/OrdersView"
 import { ReportsView } from "./views/ReportsView"
+import { FoodItemsView } from "./views/FoodItemsView"
 import { ProtectedRoute } from "./components/ProtectedRoute"
 import { useDynamicTheme } from "./hooks/useDynamicTheme"
 
@@ -26,8 +28,10 @@ function App() {
           <Route index element={<DashboardView />} />
           <Route path="tenants" element={<TenantsView />} />
           <Route path="machines" element={<MachinesView />} />
+          <Route path="machines/:machineId/configure" element={<MachineConfigureView />} />
           <Route path="orders" element={<OrdersView />} />
           <Route path="reports" element={<ReportsView />} />
+          <Route path="food-items" element={<FoodItemsView />} />
         </Route>
       </Route>
 

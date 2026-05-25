@@ -1,10 +1,38 @@
 import React, { useState, useEffect } from "react"
+import { useNavigate } from "react-router-dom"
 import { Cpu, Ban, Loader2, AlertCircle, ShieldCheck, Plus, Eye, EyeOff } from "lucide-react"
+import { motion } from "framer-motion"
 
 import api from "../services/api"
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table"
+
+const MotionTableBody = motion(TableBody)
+const MotionTableRow = motion(TableRow)
+
+const tableContainerVariants = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.04
+    }
+  }
+}
+
+const rowVariants = {
+  hidden: { opacity: 0, x: -8 },
+  show: {
+    opacity: 1,
+    x: 0,
+    transition: {
+      type: "spring",
+      stiffness: 120,
+      damping: 15
+    }
+  }
+}
 
 import {
   Dialog,
@@ -23,6 +51,7 @@ import {
 } from "../components/ui/select"
 
 export function MachinesView() {
+  const navigate = useNavigate()
   const [machines, setMachines] = useState([])
   const [tenants, setTenants] = useState([])
   const [isFetchLoading, setIsFetchLoading] = useState(true)
@@ -123,6 +152,35 @@ export function MachinesView() {
       console.error("Machine unassign failed:", err)
       setErrorMsg(
         err.response?.data?.message || `Failed to unassign ${machineId}. Ensure the backend is active.`
+      )
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Delete machine endpoint wrapper
+  const handleDeleteMachine = async (machineId) => {
+    const doubleConfirm = window.confirm(
+      `⚠️ WARNING: Are you sure you want to PERMANENTLY delete Vending Machine ${machineId}?\n\nThis will retire the hardware node from your database fleet. Historical orders and financial transaction metrics will NOT be deleted.`
+    )
+    if (!doubleConfirm) return
+
+    setIsLoading(true)
+    setErrorMsg(null)
+    setSuccessMsg(null)
+
+    try {
+      await api.post("/admin/machine/delete", {
+        machine_id: machineId,
+      })
+
+      setSuccessMsg(`Machine ${machineId} successfully deleted!`)
+      await fetchMachinesAndTenants()
+      setTimeout(() => setSuccessMsg(null), 3000)
+    } catch (err) {
+      console.error("Machine deletion failed:", err)
+      setErrorMsg(
+        err.response?.data?.message || `Failed to delete ${machineId}. Ensure the backend is active.`
       )
     } finally {
       setIsLoading(false)
@@ -314,64 +372,62 @@ export function MachinesView() {
                   </h3>
 
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground">Machine ID</label>
                     <Input
-                      placeholder="e.g. V05"
+                      placeholder="Machine ID"
                       value={machineId}
                       onChange={handleMachineIdChange}
                       required
-                      className="h-9 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground font-mono font-semibold"
+                      className="h-10 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground font-mono font-semibold"
                     />
-                    <div className="text-[10px] text-muted-foreground font-mono">
+                    <div className="text-[10px] text-muted-foreground font-mono px-1">
                       Formatted ID: <span className="font-bold text-primary">{machineId || "VXX"}</span>
                     </div>
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground">Location</label>
                     <Input
-                      placeholder="e.g. Primary Lobby"
+                      placeholder="Location"
                       value={location}
                       onChange={handleLocationChange}
-                      className="h-9 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground"
+                      className="h-10 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground"
                     />
-                    <div className="text-[10px] text-muted-foreground">
-                      Auto-capitalizes words to match premium design guidelines.
+                    <div className="text-[10px] text-muted-foreground px-1 mt-6">
+                      Define Rack layout.
                     </div>
                   </div>
 
                   <div className="grid grid-cols-3 gap-2 pt-1">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-muted-foreground">Rows</label>
+                    <div className="space-y-1.5">
                       <Input
                         type="number"
                         min="1"
                         required
+                        placeholder="Rows"
                         value={rows}
                         onChange={(e) => setRows(e.target.value)}
-                        className="h-9 text-xs bg-background border-border rounded-lg text-foreground font-mono font-semibold"
+                        className="h-10 text-xs bg-background border-border rounded-lg text-foreground font-mono font-semibold"
                       />
                     </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-muted-foreground">Columns</label>
+                    <div className="space-y-1.5">
                       <Input
                         type="number"
                         min="1"
                         required
+                        placeholder="Columns"
                         value={columns}
                         onChange={(e) => setColumns(e.target.value)}
-                        className="h-9 text-xs bg-background border-border rounded-lg text-foreground font-mono font-semibold"
+                        className="h-10 text-xs bg-background border-border rounded-lg text-foreground font-mono font-semibold"
                       />
                     </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-muted-foreground">Max Depth</label>
+                    <div className="space-y-1.5">
                       <Input
                         type="number"
                         min="1"
                         required
+                        placeholder="Max Depth"
                         value={maxDepth}
                         onChange={(e) => setMaxDepth(e.target.value)}
-                        className="h-9 text-xs bg-background border-border rounded-lg text-foreground font-mono font-semibold"
+                        className="h-10 text-xs bg-background border-border rounded-lg text-foreground font-mono font-semibold"
                       />
                     </div>
                   </div>
@@ -419,45 +475,42 @@ export function MachinesView() {
 
                   {assignmentType === "NEW" && (
                     <div className="space-y-3.5 animate-in fade-in slide-in-from-top-1 duration-150">
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-muted-foreground">Tenant Name</label>
+                      <div className="space-y-1.5">
                         <Input
-                          placeholder="Acme Corp"
+                          placeholder="Tenant Name"
                           value={newTenantBusinessName}
                           onChange={(e) => setNewTenantBusinessName(e.target.value)}
                           required={assignmentType === "NEW"}
-                          className="h-8 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground"
+                          className="h-10 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground"
                         />
                       </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-muted-foreground">Contact Email</label>
+                      <div className="space-y-1.5">
                         <Input
                           type="email"
-                          placeholder="billing@acme.com"
+                          placeholder="Contact Email"
                           value={newTenantEmail}
                           onChange={(e) => setNewTenantEmail(e.target.value)}
                           required={assignmentType === "NEW"}
-                          className="h-8 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground"
+                          className="h-10 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground"
                         />
                       </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-muted-foreground">Mobile Number</label>
+                      <div className="space-y-1.5">
                         <Input
-                          placeholder="+919999999999"
+                          placeholder="Mobile Number"
                           value={newTenantMobile}
                           onChange={(e) => setNewTenantMobile(e.target.value)}
                           required={assignmentType === "NEW"}
-                          className="h-8 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground font-mono"
+                          className="h-10 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground font-mono"
                         />
                       </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-muted-foreground">Generated Password</label>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider pl-1">Auto Generated Password</label>
                         <div className="relative">
                           <Input
                             type={showPassword ? "text" : "password"}
                             value={newTenantPassword}
                             readOnly
-                            className="h-8 pr-8 text-xs bg-background border-border rounded-lg text-foreground font-mono font-semibold"
+                            className="h-10 pr-10 text-xs bg-background border-border rounded-lg text-foreground font-mono font-semibold"
                           />
                           <button
                             type="button"
@@ -466,13 +519,13 @@ export function MachinesView() {
                             onMouseLeave={() => setShowPassword(false)}
                             onTouchStart={() => setShowPassword(true)}
                             onTouchEnd={() => setShowPassword(false)}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer focus:outline-none p-0.5"
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer focus:outline-none p-0.5"
                             title="Hold to reveal"
                           >
                             {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                           </button>
                         </div>
-                        <div className="text-[9px] text-muted-foreground">
+                        <div className="text-[9px] text-muted-foreground px-1">
                           Hold eye icon to securely display auto-generated password credentials.
                         </div>
                       </div>
@@ -481,10 +534,9 @@ export function MachinesView() {
 
                   {assignmentType === "EXISTING" && (
                     <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-150">
-                      <label className="text-[10px] font-bold text-muted-foreground">Select Active Tenant</label>
                       <Select value={existingTenantId} onValueChange={setExistingTenantId}>
-                        <SelectTrigger className="w-full bg-background border-border text-foreground rounded-lg h-9 text-xs">
-                          <SelectValue placeholder="Select active tenant context..." />
+                        <SelectTrigger className="w-full bg-background border-border text-foreground rounded-lg h-10 text-xs">
+                          <SelectValue placeholder="Select Active Tenant" />
                         </SelectTrigger>
                         <SelectContent className="bg-card border-border text-card-foreground">
                           {activeTenants.length === 0 ? (
@@ -572,7 +624,7 @@ export function MachinesView() {
               <TableHead className="font-bold text-muted-foreground text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
-          <TableBody>
+          <MotionTableBody variants={tableContainerVariants} initial="hidden" animate="show">
             {activeFleet.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={7} className="text-center py-8 text-muted-foreground font-medium font-mono text-xs">
@@ -581,7 +633,7 @@ export function MachinesView() {
               </TableRow>
             ) : (
               activeFleet.map((machine) => (
-                <TableRow key={machine.machine_id} className="hover:bg-muted/30">
+                <MotionTableRow key={machine.machine_id} variants={rowVariants} className="hover:bg-muted/30">
                   <TableCell className="font-bold text-foreground flex items-center gap-2 font-mono">
                     <Cpu className="h-4 w-4 text-emerald-500" />
                     {machine.machine_id}
@@ -599,36 +651,53 @@ export function MachinesView() {
                     {(machine.grid_config?.rows || 6) * (machine.grid_config?.columns || 8) * (machine.grid_config?.max_depth || 7)}
                   </TableCell>
                   <TableCell>
-                    <span className="rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 text-xs font-semibold text-emerald-500">
+                    <motion.span 
+                      animate={{ opacity: [0.65, 1, 0.65] }}
+                      transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
+                      className="rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 text-xs font-semibold text-emerald-500 inline-block"
+                    >
                       Active
-                    </span>
+                    </motion.span>
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleOpenEdit(machine)}
-                        className="h-8 text-xs font-bold rounded-lg border-border hover:bg-muted cursor-pointer flex items-center gap-1.5"
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        disabled={isLoading}
-                        onClick={() => handleUnassign(machine.machine_id)}
-                        className="h-8 text-xs font-bold rounded-lg flex items-center gap-1.5 bg-red-600 text-white hover:bg-red-700 shadow-sm cursor-pointer"
-                      >
-
-                        Unassign
-                      </Button>
+                      <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} className="inline-block">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => navigate(`/dashboard/machines/${machine.machine_id}/configure`)}
+                          className="h-8 text-xs font-bold rounded-lg border-primary text-primary hover:bg-primary/5 cursor-pointer flex items-center gap-1.5"
+                        >
+                          Configure Slots
+                        </Button>
+                      </motion.div>
+                      <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} className="inline-block">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleOpenEdit(machine)}
+                          className="h-8 text-xs font-bold rounded-lg border-border hover:bg-muted cursor-pointer flex items-center gap-1.5"
+                        >
+                          Edit
+                        </Button>
+                      </motion.div>
+                      <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} className="inline-block">
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          disabled={isLoading}
+                          onClick={() => handleUnassign(machine.machine_id)}
+                          className="h-8 text-xs font-bold rounded-lg flex items-center gap-1.5 bg-red-600 text-white hover:bg-red-700 shadow-sm cursor-pointer"
+                        >
+                          Unassign
+                        </Button>
+                      </motion.div>
                     </div>
                   </TableCell>
-                </TableRow>
+                </MotionTableRow>
               ))
             )}
-          </TableBody>
+          </MotionTableBody>
         </Table>
       </div>
 
@@ -650,7 +719,7 @@ export function MachinesView() {
                 <TableHead className="font-bold text-muted-foreground text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
-            <TableBody>
+            <MotionTableBody variants={tableContainerVariants} initial="hidden" animate="show">
               {unassignedFleet.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center py-8 text-muted-foreground font-medium font-mono text-xs">
@@ -659,7 +728,7 @@ export function MachinesView() {
                 </TableRow>
               ) : (
                 unassignedFleet.map((machine) => (
-                  <TableRow key={machine.machine_id} className="hover:bg-muted/30">
+                  <MotionTableRow key={machine.machine_id} variants={rowVariants} className="hover:bg-muted/30">
                     <TableCell className="font-bold text-foreground flex items-center gap-2 font-mono">
                       <Cpu className="h-4 w-4 text-muted-foreground" />
                       {machine.machine_id}
@@ -682,19 +751,34 @@ export function MachinesView() {
                       </span>
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleOpenEdit(machine)}
-                        className="h-8 text-xs font-bold rounded-lg border-border hover:bg-muted cursor-pointer flex items-center gap-1.5 ml-auto"
-                      >
-                        Edit
-                      </Button>
+                      <div className="flex items-center justify-end gap-2">
+                        <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} className="inline-block">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleOpenEdit(machine)}
+                            className="h-8 text-xs font-bold rounded-lg border-border hover:bg-muted cursor-pointer flex items-center gap-1.5"
+                          >
+                            Edit
+                          </Button>
+                        </motion.div>
+                        <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} className="inline-block">
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            disabled={isLoading}
+                            onClick={() => handleDeleteMachine(machine.machine_id)}
+                            className="h-8 text-xs font-bold rounded-lg flex items-center gap-1.5 bg-red-600 text-white hover:bg-red-700 shadow-sm cursor-pointer"
+                          >
+                            Delete
+                          </Button>
+                        </motion.div>
+                      </div>
                     </TableCell>
-                  </TableRow>
+                  </MotionTableRow>
                 ))
               )}
-            </TableBody>
+            </MotionTableBody>
           </Table>
         </div>
       </div>
@@ -725,9 +809,8 @@ export function MachinesView() {
                   </h3>
 
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground">Machine ID</label>
                     <Input
-                      placeholder="e.g. V05"
+                      placeholder="Machine ID"
                       value={editMachineId}
                       onChange={(e) => {
                         let val = e.target.value
@@ -742,17 +825,16 @@ export function MachinesView() {
                         setEditMachineId(cleaned)
                       }}
                       required
-                      className="h-9 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground font-mono font-semibold"
+                      className="h-10 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground font-mono font-semibold"
                     />
-                    <div className="text-[10px] text-muted-foreground font-mono">
+                    <div className="text-[10px] text-muted-foreground font-mono px-1">
                       Formatted ID: <span className="font-bold text-primary">{editMachineId || "VXX"}</span>
                     </div>
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground">Location</label>
                     <Input
-                      placeholder="e.g. Primary Lobby"
+                      placeholder="Location"
                       value={editLocation}
                       onChange={(e) => {
                         const val = e.target.value
@@ -763,42 +845,42 @@ export function MachinesView() {
                         })
                         setEditLocation(capitalizedWords.join(" "))
                       }}
-                      className="h-9 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground"
+                      className="h-10 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground"
                     />
                   </div>
 
                   <div className="grid grid-cols-3 gap-2 pt-1">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-muted-foreground">Rows</label>
+                    <div className="space-y-1.5">
                       <Input
                         type="number"
                         min="1"
                         required
+                        placeholder="Rows"
                         value={editRows}
                         onChange={(e) => setEditRows(e.target.value)}
-                        className="h-9 text-xs bg-background border-border rounded-lg text-foreground font-mono font-semibold"
+                        className="h-10 text-xs bg-background border-border rounded-lg text-foreground font-mono font-semibold"
                       />
                     </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-muted-foreground">Columns</label>
+                    <div className="space-y-1.5">
                       <Input
                         type="number"
                         min="1"
                         required
+                        placeholder="Columns"
                         value={editColumns}
                         onChange={(e) => setEditColumns(e.target.value)}
-                        className="h-9 text-xs bg-background border-border rounded-lg text-foreground font-mono font-semibold"
+                        className="h-10 text-xs bg-background border-border rounded-lg text-foreground font-mono font-semibold"
                       />
                     </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-muted-foreground">Max Depth</label>
+                    <div className="space-y-1.5">
                       <Input
                         type="number"
                         min="1"
                         required
+                        placeholder="Max Depth"
                         value={editMaxDepth}
                         onChange={(e) => setEditMaxDepth(e.target.value)}
-                        className="h-9 text-xs bg-background border-border rounded-lg text-foreground font-mono font-semibold"
+                        className="h-10 text-xs bg-background border-border rounded-lg text-foreground font-mono font-semibold"
                       />
                     </div>
                   </div>
@@ -812,10 +894,9 @@ export function MachinesView() {
                   </h3>
 
                   <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-150">
-                    <label className="text-[10px] font-bold text-muted-foreground">Select Active Tenant</label>
                     <Select value={editTenantId} onValueChange={setEditTenantId}>
-                      <SelectTrigger className="w-full bg-background border-border text-foreground rounded-lg h-9 text-xs">
-                        <SelectValue placeholder="Select active tenant context..." />
+                      <SelectTrigger className="w-full bg-background border-border text-foreground rounded-lg h-10 text-xs">
+                        <SelectValue placeholder="Select Active Tenant" />
                       </SelectTrigger>
                       <SelectContent className="bg-card border-border text-card-foreground">
                         {activeTenants.length === 0 ? (
@@ -840,9 +921,8 @@ export function MachinesView() {
             ) : (
               <div className="space-y-3.5">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-muted-foreground">Machine ID</label>
                   <Input
-                    placeholder="e.g. V05"
+                    placeholder="Machine ID"
                     value={editMachineId}
                     onChange={(e) => {
                       let val = e.target.value
@@ -857,17 +937,16 @@ export function MachinesView() {
                       setEditMachineId(cleaned)
                     }}
                     required
-                    className="h-9 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground font-mono font-semibold"
+                    className="h-10 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground font-mono font-semibold"
                   />
-                  <div className="text-[10px] text-muted-foreground font-mono">
+                  <div className="text-[10px] text-muted-foreground font-mono px-1">
                     Formatted ID: <span className="font-bold text-primary">{editMachineId || "VXX"}</span>
                   </div>
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-muted-foreground">Location</label>
                   <Input
-                    placeholder="e.g. Primary Lobby"
+                    placeholder="Location"
                     value={editLocation}
                     onChange={(e) => {
                       const val = e.target.value
@@ -878,42 +957,42 @@ export function MachinesView() {
                       })
                       setEditLocation(capitalizedWords.join(" "))
                     }}
-                    className="h-9 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground"
+                    className="h-10 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground"
                   />
                 </div>
 
                 <div className="grid grid-cols-3 gap-2 pt-1">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-muted-foreground">Rows</label>
+                  <div className="space-y-1.5">
                     <Input
                       type="number"
                       min="1"
                       required
+                      placeholder="Rows"
                       value={editRows}
                       onChange={(e) => setEditRows(e.target.value)}
-                      className="h-9 text-xs bg-background border-border rounded-lg text-foreground font-mono font-semibold"
+                      className="h-10 text-xs bg-background border-border rounded-lg text-foreground font-mono font-semibold"
                     />
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-muted-foreground">Columns</label>
+                  <div className="space-y-1.5">
                     <Input
                       type="number"
                       min="1"
                       required
+                      placeholder="Columns"
                       value={editColumns}
                       onChange={(e) => setEditColumns(e.target.value)}
-                      className="h-9 text-xs bg-background border-border rounded-lg text-foreground font-mono font-semibold"
+                      className="h-10 text-xs bg-background border-border rounded-lg text-foreground font-mono font-semibold"
                     />
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-muted-foreground">Max Depth</label>
+                  <div className="space-y-1.5">
                     <Input
                       type="number"
                       min="1"
                       required
+                      placeholder="Max Depth"
                       value={editMaxDepth}
                       onChange={(e) => setEditMaxDepth(e.target.value)}
-                      className="h-9 text-xs bg-background border-border rounded-lg text-foreground font-mono font-semibold"
+                      className="h-10 text-xs bg-background border-border rounded-lg text-foreground font-mono font-semibold"
                     />
                   </div>
                 </div>

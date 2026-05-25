@@ -1,10 +1,16 @@
 import React from "react"
 import { AlertTriangle } from "lucide-react"
+import { motion } from "framer-motion"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table"
 
 export function ReportsView() {
   return (
-    <div className="space-y-6">
+    <motion.div 
+      initial={{ opacity: 0, y: 15 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ type: "spring", stiffness: 100, damping: 15 }}
+      className="space-y-6"
+    >
       <div>
         <h1 className="text-3xl font-extrabold tracking-tight text-foreground">
           Hardware & Maintenance Reports
@@ -28,13 +34,27 @@ export function ReportsView() {
           </TableHeader>
           <TableBody>
             <TableRow>
-              <TableCell colSpan={6} className="text-center py-8 text-muted-foreground font-medium">
-                No active issues reported. All smart vending nodes are operating operational.
+              <TableCell colSpan={6} className="text-center py-16 text-muted-foreground">
+                <motion.div
+                  animate={{ scale: [0.97, 1.03, 0.97] }}
+                  transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
+                  className="flex flex-col items-center justify-center gap-3.5 select-none"
+                >
+                  <div className="h-12 w-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 shadow-inner">
+                    <AlertTriangle className="h-5 w-5 animate-pulse" />
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="text-sm font-bold text-foreground font-mono uppercase tracking-wider">No Incidents Reported</p>
+                    <p className="text-xs text-muted-foreground/80 font-medium max-w-[280px]">
+                      Hardware nodes operational. Audit complaints, technician logs, and dynamic system error telemetry are clean.
+                    </p>
+                  </div>
+                </motion.div>
               </TableCell>
             </TableRow>
           </TableBody>
         </Table>
       </div>
-    </div>
+    </motion.div>
   )
 }

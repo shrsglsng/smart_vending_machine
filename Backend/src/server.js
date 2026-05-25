@@ -3,7 +3,7 @@ const path = require('path');
 const Fastify = require('fastify');
 const cors = require('@fastify/cors');
 const jwt = require('@fastify/jwt');
-const Sentry = require('@sentry/node');
+const { logErrorLocal } = require('./utils/errorLogger');
 const config = require('./utils/config');
 const dbConnector = require('./services/db');
 
@@ -13,17 +13,7 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// 1. Initialize Sentry tracking as early as possible
-if (config.SENTRY_DSN) {
-  Sentry.init({
-    dsn: config.SENTRY_DSN,
-    environment: config.NODE_ENV,
-    tracesSampleRate: 1.0,
-  });
-  console.log('Sentry Error Tracking initialized successfully.');
-} else {
-  console.log('Sentry disabled: SENTRY_DSN environment variable not configured.');
-}
+// Sentry tracking removed. Local file-based logging is initialized automatically on require.
 
 // 2. Initialize Fastify Instance with custom logging levels
 const fastify = Fastify({
@@ -32,22 +22,13 @@ const fastify = Fastify({
   },
 });
 
-// 3. Register Sentry Global Error Handler
+// 3. Register Local Global Error Handler
 fastify.setErrorHandler((error, request, reply) => {
   // Always log the error locally using Fastify's native logger
   fastify.log.error(error);
 
-  // Send tracing details to Sentry if active
-  if (config.SENTRY_DSN) {
-    Sentry.withScope((scope) => {
-      scope.setSDKProcessingMetadata({ request });
-      scope.setExtra('url', request.raw.url);
-      scope.setExtra('method', request.raw.method);
-      scope.setExtra('query', request.query);
-      scope.setExtra('body', request.body);
-      Sentry.captureException(error);
-    });
-  }
+  // Record error details and HTTP context to local error.log with masking
+  logErrorLocal(error, request);
 
   // Consistent API error envelope structure
   const statusCode = error.statusCode || 500;
