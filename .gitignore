@@ -40,3 +40,12 @@ PHONEPE_API_GUIDE.md
 server_legacy_backup/
 PhonePe_Payments_Guide.md
 Project_plan.md
+
+# Local Error Logs
+/Backend/logs/
+
+# Test & Scratch Files
+**/verify_*
+**/scratch_*
+scratch_test_logging
+scratch_test_sharp.js
