@@ -34,6 +34,10 @@ const MasterCatalogSchema = new mongoose.Schema({
     default: '',
     trim: true,
   },
+  zoom_level: {
+    type: Number,
+    default: 1.0,
+  },
 }, {
   timestamps: true,
 });

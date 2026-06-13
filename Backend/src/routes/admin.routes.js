@@ -1,10 +1,30 @@
 const mongoose = require('mongoose');
+const path = require('path');
+const fs = require('fs');
+const sharp = require('sharp');
 const Tenant = require('../models/tenant');
 const User = require('../models/user');
 const Machine = require('../models/machine');
 const RestockJob = require('../models/restockJob');
 const requireTenant = require('../middlewares/requireTenant');
 const requireSuperAdmin = require('../middlewares/requireSuperAdmin');
+
+function deleteLocalOperatorImage(fastify, imagePath) {
+  if (imagePath && (imagePath.startsWith('/uploads/operators/') || imagePath.startsWith('uploads/operators/'))) {
+    const filename = path.basename(imagePath);
+    const absolutePath = path.join(__dirname, '../../public/uploads/operators', filename);
+    if (fs.existsSync(absolutePath)) {
+      try {
+        fs.unlinkSync(absolutePath);
+        fastify.log.info(`Successfully deleted operator image from disk: ${absolutePath}`);
+        return true;
+      } catch (err) {
+        fastify.log.error(`Failed to delete operator image from disk at ${absolutePath}:`, err);
+      }
+    }
+  }
+  return false;
+}
 
 async function adminRoutes(fastify, options) {
   // 1. Create Tenant (Super Admin Only)
@@ -146,21 +166,52 @@ async function adminRoutes(fastify, options) {
     }
   });
 
-  // 2. Create Operator (Tenant Admin Only)
+  // 2. Create Operator (Super Admin & Tenant Admin Only)
   // POST /api/v1/admin/operator/create
   fastify.post('/admin/operator/create', {
     preHandler: [requireTenant]
   }, async (request, reply) => {
     try {
-      const { mobile_number, password } = request.body || {};
-
-      // Verify that the user attempting to create the operator is a Tenant Admin
-      if (request.user.role !== 'TENANT_ADMIN') {
+      // Authenticate role permission
+      if (request.user.role !== 'TENANT_ADMIN' && request.user.role !== 'SUPER_ADMIN') {
         reply.status(403).send({
           error: 'Forbidden',
-          message: 'Access denied: Only Tenant Admins can create Operator accounts.'
+          message: 'Access denied: Only Administrators can create Operator accounts.'
         });
         return;
+      }
+
+      let mobile_number = '';
+      let password = '';
+      let name = '';
+      let address = '';
+      let item_carrying = '';
+      let tenant_id = '';
+      let image_path = '';
+      let fileBuffer = null;
+
+      if (request.isMultipart()) {
+        const parts = request.parts();
+        for await (const part of parts) {
+          if (part.file) {
+            fileBuffer = await part.toBuffer();
+          } else {
+            if (part.fieldname === 'mobile_number') mobile_number = part.value;
+            if (part.fieldname === 'password') password = part.value;
+            if (part.fieldname === 'name') name = part.value;
+            if (part.fieldname === 'address') address = part.value;
+            if (part.fieldname === 'item_carrying') item_carrying = part.value;
+            if (part.fieldname === 'tenant_id') tenant_id = part.value;
+          }
+        }
+      } else {
+        const body = request.body || {};
+        mobile_number = body.mobile_number;
+        password = body.password;
+        name = body.name;
+        address = body.address;
+        item_carrying = body.item_carrying;
+        tenant_id = body.tenant_id;
       }
 
       if (!mobile_number || !password) {
@@ -181,11 +232,60 @@ async function adminRoutes(fastify, options) {
         return;
       }
 
-      // Create Operator (linked to Tenant Admin's tenant_id)
+      // Assign target tenant contexts
+      let finalTenantId = request.user.tenant_id;
+      if (request.user.role === 'SUPER_ADMIN') {
+        finalTenantId = tenant_id || 'Super_admin';
+      }
+
+      // Verify that the assigned tenant profile exists
+      const tenantExists = await Tenant.findOne({ tenant_id: finalTenantId });
+      if (!tenantExists && finalTenantId !== 'TEN_PLATFORM_ROOT') {
+        reply.status(404).send({
+          error: 'NotFound',
+          message: `Tenant with ID ${finalTenantId} not found.`
+        });
+        return;
+      }
+
+      // Process image file if present using sharp
+      if (fileBuffer) {
+        const cleanName = mobile_number.replace(/[^0-9]/g, '');
+        const outputFilename = `operator_${cleanName || Date.now()}_${Date.now()}.webp`;
+        const outputDir = path.join(__dirname, '../../public/uploads/operators');
+        
+        if (!fs.existsSync(outputDir)) {
+          fs.mkdirSync(outputDir, { recursive: true });
+        }
+        const localFilePath = path.join(outputDir, outputFilename);
+
+        try {
+          await sharp(fileBuffer)
+            .resize(400, 400, { fit: 'cover' })
+            .webp({ quality: 80 })
+            .toFile(localFilePath);
+          
+          image_path = `/uploads/operators/${outputFilename}`;
+        } catch (sharpError) {
+          fastify.log.error('Sharp optimization pipeline for operator image failed:', sharpError);
+          reply.status(500).send({
+            error: 'ImageProcessingError',
+            message: `Failed to process uploaded operator image: ${sharpError.message}`
+          });
+          return;
+        }
+      }
+
+      // Create Operator
       const operator = await User.create({
-        tenant_id: request.user.tenant_id, // Hardcoded to inherit the Tenant Admin's tenant_id
+        tenant_id: finalTenantId,
         mobile_number,
         password,
+        password_plaintext: password,
+        name: name ? name.trim() : '',
+        address: address ? address.trim() : '',
+        item_carrying: item_carrying ? item_carrying.trim() : '',
+        image_path,
         role: 'OPERATOR'
       });
 
@@ -195,7 +295,11 @@ async function adminRoutes(fastify, options) {
           id: operator._id,
           mobile_number: operator.mobile_number,
           role: operator.role,
-          tenant_id: operator.tenant_id
+          tenant_id: operator.tenant_id,
+          name: operator.name,
+          address: operator.address,
+          item_carrying: operator.item_carrying,
+          image_path: operator.image_path
         }
       });
     } catch (error) {
@@ -625,13 +729,14 @@ async function adminRoutes(fastify, options) {
     }
   });
 
-  // 7. Get All Machines (Super Admin Only)
+  // 7. Get All Machines (Super Admin & Tenant Admin Access)
   // GET /api/v1/admin/machines
   fastify.get('/admin/machines', {
-    preHandler: [requireTenant, requireSuperAdmin]
+    preHandler: [requireTenant]
   }, async (request, reply) => {
     try {
-      const machinesList = await Machine.find({}).sort({ createdAt: -1 });
+      const query = request.user.role === 'SUPER_ADMIN' ? {} : { tenant_id: request.user.tenant_id };
+      const machinesList = await Machine.find(query).sort({ createdAt: -1 });
       
       const enrichedMachines = await Promise.all(
         machinesList.map(async (machine) => {
@@ -949,23 +1054,318 @@ async function adminRoutes(fastify, options) {
     }
   });
 
-  // 10. Get Operators (Tenant Admin Only)
+  // 10. Get Operators (Super Admin & Tenant Admin Only)
   // GET /api/v1/admin/operators
   fastify.get('/admin/operators', {
     preHandler: [requireTenant]
   }, async (request, reply) => {
     try {
-      let tenant_id = request.user.tenant_id;
-      if (request.user.role === 'SUPER_ADMIN' && request.query.tenant_id) {
-        tenant_id = request.query.tenant_id;
+      let query = { role: 'OPERATOR' };
+      if (request.user.role === 'SUPER_ADMIN') {
+        if (request.query.tenant_id) {
+          query.tenant_id = request.query.tenant_id;
+        }
+      } else {
+        query.tenant_id = request.user.tenant_id;
       }
-      const operators = await User.find({ tenant_id, role: 'OPERATOR' }, 'mobile_number role createdAt');
-      reply.status(200).send(operators);
+
+      const operatorsList = await User.find(query, 'mobile_number role createdAt tenant_id name address item_carrying image_path password_plaintext').sort({ createdAt: -1 });
+      
+      const enrichedOperators = await Promise.all(
+        operatorsList.map(async (operator) => {
+          let tenantName = 'Super Admin / Platform';
+          if (operator.tenant_id && operator.tenant_id !== 'Super_admin' && operator.tenant_id !== 'TEN_PLATFORM_ROOT') {
+            const tenant = await Tenant.findOne({ tenant_id: operator.tenant_id });
+            if (tenant) {
+              tenantName = tenant.business_name;
+            }
+          } else if (operator.tenant_id === 'Super_admin') {
+            tenantName = 'AibotINK (Platform Root)';
+          }
+
+          // Fetch dynamic active restock jobs assigned to this operator
+          const activeJobs = await RestockJob.find({
+            operator_id: operator._id,
+            status: { $in: ['PENDING', 'IN_PROGRESS'] }
+          }, 'machine_id');
+          const uniqueMachineIds = [...new Set(activeJobs.map(j => j.machine_id))];
+          const managedMachineIds = uniqueMachineIds.join(', ') || '--';
+
+          return {
+            id: operator._id,
+            mobile_number: operator.mobile_number,
+            role: operator.role,
+            tenant_id: operator.tenant_id,
+            name: operator.name || 'Unnamed Operator',
+            address: operator.address || 'No Address Provided',
+            item_carrying: operator.item_carrying || 'None',
+            image_path: operator.image_path || null,
+            password_plaintext: operator.password_plaintext || null,
+            createdAt: operator.createdAt,
+            creator_tenant_name: tenantName,
+            managed_machines: managedMachineIds
+          };
+        })
+      );
+
+      reply.status(200).send(enrichedOperators);
     } catch (error) {
       fastify.log.error(error);
       reply.status(500).send({
         error: 'InternalServerError',
         message: 'Failed to retrieve operator accounts.'
+      });
+    }
+  });
+
+  // POST /api/v1/admin/operator/edit
+  fastify.post('/admin/operator/edit', {
+    preHandler: [requireTenant]
+  }, async (request, reply) => {
+    try {
+      // Authenticate role permission
+      if (request.user.role !== 'TENANT_ADMIN' && request.user.role !== 'SUPER_ADMIN') {
+        reply.status(403).send({
+          error: 'Forbidden',
+          message: 'Access denied: Only Administrators can edit Operator accounts.'
+        });
+        return;
+      }
+
+      let id = '';
+      let mobile_number = '';
+      let name = '';
+      let address = '';
+      let item_carrying = '';
+      let tenant_id = '';
+      let fileBuffer = null;
+
+      if (request.isMultipart()) {
+        const parts = request.parts();
+        for await (const part of parts) {
+          if (part.file) {
+            fileBuffer = await part.toBuffer();
+          } else {
+            if (part.fieldname === 'id' || part.fieldname === '_id') id = part.value;
+            if (part.fieldname === 'mobile_number') mobile_number = part.value;
+            if (part.fieldname === 'name') name = part.value;
+            if (part.fieldname === 'address') address = part.value;
+            if (part.fieldname === 'item_carrying') item_carrying = part.value;
+            if (part.fieldname === 'tenant_id') tenant_id = part.value;
+          }
+        }
+      } else {
+        const body = request.body || {};
+        id = body.id || body._id;
+        mobile_number = body.mobile_number;
+        name = body.name;
+        address = body.address;
+        item_carrying = body.item_carrying;
+        tenant_id = body.tenant_id;
+      }
+
+      if (!id) {
+        reply.status(400).send({
+          error: 'BadRequest',
+          message: 'Operator ID is required to edit.'
+        });
+        return;
+      }
+
+      const operator = await User.findOne({ _id: id, role: 'OPERATOR' });
+      if (!operator) {
+        reply.status(404).send({
+          error: 'NotFound',
+          message: 'Operator account not found.'
+        });
+        return;
+      }
+
+      // Enforce B2B tenant boundaries
+      if (request.user.role !== 'SUPER_ADMIN' && operator.tenant_id !== request.user.tenant_id) {
+        reply.status(403).send({
+          error: 'Forbidden',
+          message: 'Access denied: You are not authorized to edit this operator.'
+        });
+        return;
+      }
+
+      // Check duplicate mobile_number if it is changing
+      if (mobile_number && mobile_number !== operator.mobile_number) {
+        const duplicate = await User.findOne({ mobile_number });
+        if (duplicate) {
+          reply.status(409).send({
+            error: 'Conflict',
+            message: 'A user with this mobile number already exists.'
+          });
+          return;
+        }
+        operator.mobile_number = mobile_number;
+      }
+
+      if (name !== undefined) operator.name = name.trim();
+      if (address !== undefined) operator.address = address.trim();
+      if (item_carrying !== undefined) operator.item_carrying = item_carrying.trim();
+
+      // Only SUPER_ADMIN can modify the tenant assignment
+      if (request.user.role === 'SUPER_ADMIN' && tenant_id) {
+        const tenantExists = await Tenant.findOne({ tenant_id });
+        if (!tenantExists && tenant_id !== 'TEN_PLATFORM_ROOT' && tenant_id !== 'Super_admin') {
+          reply.status(404).send({
+            error: 'NotFound',
+            message: `Tenant with ID ${tenant_id} not found.`
+          });
+          return;
+        }
+        operator.tenant_id = tenant_id;
+      }
+
+      // Process new image file if present using sharp
+      if (fileBuffer) {
+        // Clean up old image if present
+        deleteLocalOperatorImage(fastify, operator.image_path);
+
+        const cleanMobile = (mobile_number || operator.mobile_number).replace(/[^0-9]/g, '');
+        const outputFilename = `operator_${cleanMobile || Date.now()}_${Date.now()}.webp`;
+        const outputDir = path.join(__dirname, '../../public/uploads/operators');
+
+        if (!fs.existsSync(outputDir)) {
+          fs.mkdirSync(outputDir, { recursive: true });
+        }
+        const localFilePath = path.join(outputDir, outputFilename);
+
+        try {
+          await sharp(fileBuffer)
+            .resize(400, 400, { fit: 'cover' })
+            .webp({ quality: 80 })
+            .toFile(localFilePath);
+
+          operator.image_path = `/uploads/operators/${outputFilename}`;
+        } catch (sharpError) {
+          fastify.log.error('Sharp optimization pipeline for operator image failed:', sharpError);
+          reply.status(500).send({
+            error: 'ImageProcessingError',
+            message: `Failed to process uploaded operator image: ${sharpError.message}`
+          });
+          return;
+        }
+      }
+
+      await operator.save();
+
+      reply.status(200).send({
+        message: 'Operator account successfully updated.',
+        operator: {
+          id: operator._id,
+          mobile_number: operator.mobile_number,
+          role: operator.role,
+          tenant_id: operator.tenant_id,
+          name: operator.name,
+          address: operator.address,
+          item_carrying: operator.item_carrying,
+          image_path: operator.image_path,
+          password_plaintext: operator.password_plaintext
+        }
+      });
+    } catch (error) {
+      fastify.log.error(error);
+      reply.status(500).send({
+        error: 'InternalServerError',
+        message: 'Failed to update Operator account.'
+      });
+    }
+  });
+
+  // POST /api/v1/admin/operator/delete
+  fastify.post('/admin/operator/delete', {
+    preHandler: [requireTenant]
+  }, async (request, reply) => {
+    try {
+      // Authenticate role permission
+      if (request.user.role !== 'TENANT_ADMIN' && request.user.role !== 'SUPER_ADMIN') {
+        reply.status(403).send({
+          error: 'Forbidden',
+          message: 'Access denied: Only Administrators can delete Operator accounts.'
+        });
+        return;
+      }
+
+      const { id } = request.body || {};
+      if (!id) {
+        reply.status(400).send({
+          error: 'BadRequest',
+          message: 'Operator ID is required to delete.'
+        });
+        return;
+      }
+
+      const operator = await User.findOne({ _id: id, role: 'OPERATOR' });
+      if (!operator) {
+        reply.status(404).send({
+          error: 'NotFound',
+          message: 'Operator account not found.'
+        });
+        return;
+      }
+
+      // Enforce B2B tenant boundaries
+      if (request.user.role !== 'SUPER_ADMIN' && operator.tenant_id !== request.user.tenant_id) {
+        reply.status(403).send({
+          error: 'Forbidden',
+          message: 'Access denied: You are not authorized to delete this operator.'
+        });
+        return;
+      }
+
+      // Clean up old image if present
+      deleteLocalOperatorImage(fastify, operator.image_path);
+
+      await User.deleteOne({ _id: id, role: 'OPERATOR' });
+
+      reply.status(200).send({
+        message: 'Operator account successfully deleted.'
+      });
+    } catch (error) {
+      fastify.log.error(error);
+      reply.status(500).send({
+        error: 'InternalServerError',
+        message: 'Failed to delete Operator account.'
+      });
+    }
+  });
+
+  // GET /api/v1/admin/operator/jobs/:operatorId
+  fastify.get('/admin/operator/jobs/:operatorId', {
+    preHandler: [requireTenant]
+  }, async (request, reply) => {
+    try {
+      const { operatorId } = request.params;
+      
+      const operator = await User.findOne({ _id: operatorId, role: 'OPERATOR' });
+      if (!operator) {
+        reply.status(404).send({
+          error: 'NotFound',
+          message: 'Operator account not found.'
+        });
+        return;
+      }
+      
+      // Enforce B2B tenant boundaries
+      if (request.user.role !== 'SUPER_ADMIN' && operator.tenant_id !== request.user.tenant_id) {
+        reply.status(403).send({
+          error: 'Forbidden',
+          message: 'Access denied: You are not authorized to view this operator\'s jobs.'
+        });
+        return;
+      }
+      
+      const jobs = await RestockJob.find({ operator_id: operatorId }).sort({ createdAt: -1 });
+      reply.status(200).send(jobs);
+    } catch (error) {
+      fastify.log.error(error);
+      reply.status(500).send({
+        error: 'InternalServerError',
+        message: 'Failed to retrieve operator restock jobs.'
       });
     }
   });

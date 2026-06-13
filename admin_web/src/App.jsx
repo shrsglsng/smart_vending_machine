@@ -10,6 +10,7 @@ import { MachineConfigureView } from "./views/MachineConfigureView"
 import { OrdersView } from "./views/OrdersView"
 import { ReportsView } from "./views/ReportsView"
 import { FoodItemsView } from "./views/FoodItemsView"
+import { OperatorsView } from "./views/OperatorsView"
 import { ProtectedRoute } from "./components/ProtectedRoute"
 import { useDynamicTheme } from "./hooks/useDynamicTheme"
 
@@ -32,6 +33,7 @@ function App() {
           <Route path="orders" element={<OrdersView />} />
           <Route path="reports" element={<ReportsView />} />
           <Route path="food-items" element={<FoodItemsView />} />
+          <Route path="operators" element={<OperatorsView />} />
         </Route>
       </Route>
 

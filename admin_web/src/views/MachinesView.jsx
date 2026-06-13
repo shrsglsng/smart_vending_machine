@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
+import { useSelector } from "react-redux"
 import { Cpu, Ban, Loader2, AlertCircle, ShieldCheck, Plus, Eye, EyeOff } from "lucide-react"
 import { motion } from "framer-motion"
 
@@ -88,15 +89,23 @@ export function MachinesView() {
   const [editMaxDepth, setEditMaxDepth] = useState(7)
   const [editTenantId, setEditTenantId] = useState("")
 
+  const { role } = useSelector((state) => state.auth)
+
   // Fetch machines and active tenants
   const fetchMachinesAndTenants = async () => {
     try {
-      const [machinesRes, tenantsRes] = await Promise.all([
-        api.get("/admin/machines"),
-        api.get("/admin/tenants")
-      ])
-      setMachines(machinesRes.data || [])
-      setTenants(tenantsRes.data || [])
+      if (role === "SUPER_ADMIN") {
+        const [machinesRes, tenantsRes] = await Promise.all([
+          api.get("/admin/machines"),
+          api.get("/admin/tenants")
+        ])
+        setMachines(machinesRes.data || [])
+        setTenants(tenantsRes.data || [])
+      } else {
+        const machinesRes = await api.get("/admin/machines")
+        setMachines(machinesRes.data || [])
+        setTenants([])
+      }
     } catch (err) {
       console.error("Failed to fetch machines/tenants:", err)
       setErrorMsg("Failed to synchronize with database fleet node data.")
@@ -335,258 +344,260 @@ export function MachinesView() {
         </div>
 
         {/* Dialog Modal Trigger */}
-        <Dialog open={isCreateOpen} onOpenChange={(open) => {
-          setIsCreateOpen(open)
-          if (open) {
-            const rand = Math.floor(1000 + Math.random() * 9000)
-            setNewTenantPassword(`aibotink${rand}`)
-            setRows(6)
-            setColumns(8)
-            setMaxDepth(7)
-            setErrorMsg(null)
-            setSuccessMsg(null)
-          }
-        }}>
-          <DialogTrigger asChild>
-            <Button className="font-bold flex items-center gap-2 rounded-xl shadow-sm bg-primary text-primary-foreground hover:opacity-90 cursor-pointer">
-              <Plus className="h-4 w-4" />
-              Create New Machine
-            </Button>
-          </DialogTrigger>
+        {role === "SUPER_ADMIN" && (
+          <Dialog open={isCreateOpen} onOpenChange={(open) => {
+            setIsCreateOpen(open)
+            if (open) {
+              const rand = Math.floor(1000 + Math.random() * 9000)
+              setNewTenantPassword(`aibotink${rand}`)
+              setRows(6)
+              setColumns(8)
+              setMaxDepth(7)
+              setErrorMsg(null)
+              setSuccessMsg(null)
+            }
+          }}>
+            <DialogTrigger asChild>
+              <Button className="font-bold flex items-center gap-2 rounded-xl shadow-sm bg-primary text-primary-foreground hover:opacity-90 cursor-pointer">
+                <Plus className="h-4 w-4" />
+                Create New Machine
+              </Button>
+            </DialogTrigger>
 
-          <DialogContent className="sm:max-w-[700px] bg-card rounded-2xl p-6 border border-border text-card-foreground">
-            <DialogHeader className="space-y-1.5 pb-4 border-b border-border/50">
-              <DialogTitle className="text-2xl font-extrabold text-foreground flex items-center gap-2">
-                <Cpu className="h-6 w-6 text-primary animate-pulse" />
-                Add New Machine
-              </DialogTitle>
-            </DialogHeader>
+            <DialogContent className="sm:max-w-[700px] bg-card rounded-2xl p-6 border border-border text-card-foreground">
+              <DialogHeader className="space-y-1.5 pb-4 border-b border-border/50">
+                <DialogTitle className="text-2xl font-extrabold text-foreground flex items-center gap-2">
+                  <Cpu className="h-6 w-6 text-primary animate-pulse" />
+                  Add New Machine
+                </DialogTitle>
+              </DialogHeader>
 
-            <form onSubmit={handleConfirm} className="space-y-6 pt-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Left Column (Hardware Configuration) */}
-                <div className="space-y-4">
-                  <h3 className="text-sm font-bold text-foreground border-b border-border/40 pb-1 flex items-center gap-1.5">
-                    <span className="h-1.5 w-1.5 rounded-full bg-primary"></span>
-                    Vending Configuration
-                  </h3>
+              <form onSubmit={handleConfirm} className="space-y-6 pt-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Left Column (Hardware Configuration) */}
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-bold text-foreground border-b border-border/40 pb-1 flex items-center gap-1.5">
+                      <span className="h-1.5 w-1.5 rounded-full bg-primary"></span>
+                      Vending Configuration
+                    </h3>
 
-                  <div className="space-y-1.5">
-                    <Input
-                      placeholder="Machine ID"
-                      value={machineId}
-                      onChange={handleMachineIdChange}
-                      required
-                      className="h-10 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground font-mono font-semibold"
-                    />
-                    <div className="text-[10px] text-muted-foreground font-mono px-1">
-                      Formatted ID: <span className="font-bold text-primary">{machineId || "VXX"}</span>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Input
-                      placeholder="Location"
-                      value={location}
-                      onChange={handleLocationChange}
-                      className="h-10 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground"
-                    />
-                    <div className="text-[10px] text-muted-foreground px-1 mt-6">
-                      Define Rack layout.
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-2 pt-1">
                     <div className="space-y-1.5">
                       <Input
-                        type="number"
-                        min="1"
+                        placeholder="Machine ID"
+                        value={machineId}
+                        onChange={handleMachineIdChange}
                         required
-                        placeholder="Rows"
-                        value={rows}
-                        onChange={(e) => setRows(e.target.value)}
-                        className="h-10 text-xs bg-background border-border rounded-lg text-foreground font-mono font-semibold"
+                        className="h-10 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground font-mono font-semibold"
                       />
+                      <div className="text-[10px] text-muted-foreground font-mono px-1">
+                        Formatted ID: <span className="font-bold text-primary">{machineId || "VXX"}</span>
+                      </div>
                     </div>
+
                     <div className="space-y-1.5">
                       <Input
-                        type="number"
-                        min="1"
-                        required
-                        placeholder="Columns"
-                        value={columns}
-                        onChange={(e) => setColumns(e.target.value)}
-                        className="h-10 text-xs bg-background border-border rounded-lg text-foreground font-mono font-semibold"
+                        placeholder="Location"
+                        value={location}
+                        onChange={handleLocationChange}
+                        className="h-10 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground"
                       />
+                      <div className="text-[10px] text-muted-foreground px-1 mt-6">
+                        Define Rack layout.
+                      </div>
                     </div>
-                    <div className="space-y-1.5">
-                      <Input
-                        type="number"
-                        min="1"
-                        required
-                        placeholder="Max Depth"
-                        value={maxDepth}
-                        onChange={(e) => setMaxDepth(e.target.value)}
-                        className="h-10 text-xs bg-background border-border rounded-lg text-foreground font-mono font-semibold"
-                      />
-                    </div>
-                  </div>
-                </div>
 
-                {/* Right Column (Tenancy Assignment) */}
-                <div className="space-y-4">
-                  <h3 className="text-sm font-bold text-foreground border-b border-border/40 pb-1 flex items-center gap-1.5">
-                    <span className="h-1.5 w-1.5 rounded-full bg-primary"></span>
-                    Tenancy Assignment
-                  </h3>
-
-                  <div className="grid grid-cols-3 gap-1 bg-muted p-1 rounded-lg text-[10px] font-bold">
-                    <button
-                      type="button"
-                      onClick={() => setAssignmentType("NEW")}
-                      className={`py-1.5 px-1 rounded-md transition-all cursor-pointer text-center ${assignmentType === "NEW"
-                        ? "bg-background text-primary shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                        }`}
-                    >
-                      New Tenant
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setAssignmentType("EXISTING")}
-                      className={`py-1.5 px-1 rounded-md transition-all cursor-pointer text-center ${assignmentType === "EXISTING"
-                        ? "bg-background text-primary shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                        }`}
-                    >
-                      Existing
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setAssignmentType("UNASSIGNED")}
-                      className={`py-1.5 px-1 rounded-md transition-all cursor-pointer text-center ${assignmentType === "UNASSIGNED"
-                        ? "bg-background text-primary shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                        }`}
-                    >
-                      Unassigned
-                    </button>
-                  </div>
-
-                  {assignmentType === "NEW" && (
-                    <div className="space-y-3.5 animate-in fade-in slide-in-from-top-1 duration-150">
+                    <div className="grid grid-cols-3 gap-2 pt-1">
                       <div className="space-y-1.5">
                         <Input
-                          placeholder="Tenant Name"
-                          value={newTenantBusinessName}
-                          onChange={(e) => setNewTenantBusinessName(e.target.value)}
-                          required={assignmentType === "NEW"}
-                          className="h-10 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground"
+                          type="number"
+                          min="1"
+                          required
+                          placeholder="Rows"
+                          value={rows}
+                          onChange={(e) => setRows(e.target.value)}
+                          className="h-10 text-xs bg-background border-border rounded-lg text-foreground font-mono font-semibold"
                         />
                       </div>
                       <div className="space-y-1.5">
                         <Input
-                          type="email"
-                          placeholder="Contact Email"
-                          value={newTenantEmail}
-                          onChange={(e) => setNewTenantEmail(e.target.value)}
-                          required={assignmentType === "NEW"}
-                          className="h-10 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground"
+                          type="number"
+                          min="1"
+                          required
+                          placeholder="Columns"
+                          value={columns}
+                          onChange={(e) => setColumns(e.target.value)}
+                          className="h-10 text-xs bg-background border-border rounded-lg text-foreground font-mono font-semibold"
                         />
                       </div>
                       <div className="space-y-1.5">
                         <Input
-                          placeholder="Mobile Number"
-                          value={newTenantMobile}
-                          onChange={(e) => setNewTenantMobile(e.target.value)}
-                          required={assignmentType === "NEW"}
-                          className="h-10 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground font-mono"
+                          type="number"
+                          min="1"
+                          required
+                          placeholder="Max Depth"
+                          value={maxDepth}
+                          onChange={(e) => setMaxDepth(e.target.value)}
+                          className="h-10 text-xs bg-background border-border rounded-lg text-foreground font-mono font-semibold"
                         />
                       </div>
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider pl-1">Auto Generated Password</label>
-                        <div className="relative">
+                    </div>
+                  </div>
+
+                  {/* Right Column (Tenancy Assignment) */}
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-bold text-foreground border-b border-border/40 pb-1 flex items-center gap-1.5">
+                      <span className="h-1.5 w-1.5 rounded-full bg-primary"></span>
+                      Tenancy Assignment
+                    </h3>
+
+                    <div className="grid grid-cols-3 gap-1 bg-muted p-1 rounded-lg text-[10px] font-bold">
+                      <button
+                        type="button"
+                        onClick={() => setAssignmentType("NEW")}
+                        className={`py-1.5 px-1 rounded-md transition-all cursor-pointer text-center ${assignmentType === "NEW"
+                          ? "bg-background text-primary shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                          }`}
+                      >
+                        New Tenant
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAssignmentType("EXISTING")}
+                        className={`py-1.5 px-1 rounded-md transition-all cursor-pointer text-center ${assignmentType === "EXISTING"
+                          ? "bg-background text-primary shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                          }`}
+                      >
+                        Existing
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAssignmentType("UNASSIGNED")}
+                        className={`py-1.5 px-1 rounded-md transition-all cursor-pointer text-center ${assignmentType === "UNASSIGNED"
+                          ? "bg-background text-primary shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                          }`}
+                      >
+                        Unassigned
+                      </button>
+                    </div>
+
+                    {assignmentType === "NEW" && (
+                      <div className="space-y-3.5 animate-in fade-in slide-in-from-top-1 duration-150">
+                        <div className="space-y-1.5">
                           <Input
-                            type={showPassword ? "text" : "password"}
-                            value={newTenantPassword}
-                            readOnly
-                            className="h-10 pr-10 text-xs bg-background border-border rounded-lg text-foreground font-mono font-semibold"
+                            placeholder="Tenant Name"
+                            value={newTenantBusinessName}
+                            onChange={(e) => setNewTenantBusinessName(e.target.value)}
+                            required={assignmentType === "NEW"}
+                            className="h-10 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground"
                           />
-                          <button
-                            type="button"
-                            onMouseDown={() => setShowPassword(true)}
-                            onMouseUp={() => setShowPassword(false)}
-                            onMouseLeave={() => setShowPassword(false)}
-                            onTouchStart={() => setShowPassword(true)}
-                            onTouchEnd={() => setShowPassword(false)}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer focus:outline-none p-0.5"
-                            title="Hold to reveal"
-                          >
-                            {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                          </button>
                         </div>
-                        <div className="text-[9px] text-muted-foreground px-1">
-                          Hold eye icon to securely display auto-generated password credentials.
+                        <div className="space-y-1.5">
+                          <Input
+                            type="email"
+                            placeholder="Contact Email"
+                            value={newTenantEmail}
+                            onChange={(e) => setNewTenantEmail(e.target.value)}
+                            required={assignmentType === "NEW"}
+                            className="h-10 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Input
+                            placeholder="Mobile Number"
+                            value={newTenantMobile}
+                            onChange={(e) => setNewTenantMobile(e.target.value)}
+                            required={assignmentType === "NEW"}
+                            className="h-10 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground font-mono"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider pl-1">Auto Generated Password</label>
+                          <div className="relative">
+                            <Input
+                              type={showPassword ? "text" : "password"}
+                              value={newTenantPassword}
+                              readOnly
+                              className="h-10 pr-10 text-xs bg-background border-border rounded-lg text-foreground font-mono font-semibold"
+                            />
+                            <button
+                              type="button"
+                              onMouseDown={() => setShowPassword(true)}
+                              onMouseUp={() => setShowPassword(false)}
+                              onMouseLeave={() => setShowPassword(false)}
+                              onTouchStart={() => setShowPassword(true)}
+                              onTouchEnd={() => setShowPassword(false)}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer focus:outline-none p-0.5"
+                              title="Hold to reveal"
+                            >
+                              {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                            </button>
+                          </div>
+                          <div className="text-[9px] text-muted-foreground px-1">
+                            Hold eye icon to securely display auto-generated password credentials.
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {assignmentType === "EXISTING" && (
-                    <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-150">
-                      <Select value={existingTenantId} onValueChange={setExistingTenantId}>
-                        <SelectTrigger className="w-full bg-background border-border text-foreground rounded-lg h-10 text-xs">
-                          <SelectValue placeholder="Select Active Tenant" />
-                        </SelectTrigger>
-                        <SelectContent className="bg-card border-border text-card-foreground">
-                          {activeTenants.length === 0 ? (
-                            <div className="py-2 px-3 text-xs text-muted-foreground font-medium text-center font-mono">
-                              No active tenants available
-                            </div>
-                          ) : (
-                            activeTenants.map((t) => (
-                              <SelectItem key={t.tenant_id} value={t.tenant_id} className="text-xs cursor-pointer focus:bg-muted focus:text-foreground font-semibold">
-                                {t.business_name} ({t.tenant_id})
-                              </SelectItem>
-                            ))
-                          )}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-
-                  {assignmentType === "UNASSIGNED" && (
-                    <div className="rounded-lg border border-dashed border-border p-4 bg-muted/30 text-center text-xs text-muted-foreground space-y-2 animate-in fade-in slide-in-from-top-1 duration-150 font-mono">
-                      <div>
-                        This machine will be registered but mapped to the platform root context. Its initial status will be <span className="font-semibold text-primary bg-primary/10 px-1.5 py-0.5 rounded">UNASSIGNED</span>.
+                    {assignmentType === "EXISTING" && (
+                      <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-150">
+                        <Select value={existingTenantId} onValueChange={setExistingTenantId}>
+                          <SelectTrigger className="w-full bg-background border-border text-foreground rounded-lg h-10 text-xs">
+                            <SelectValue placeholder="Select Active Tenant" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-card border-border text-card-foreground">
+                            {activeTenants.length === 0 ? (
+                              <div className="py-2 px-3 text-xs text-muted-foreground font-medium text-center font-mono">
+                                No active tenants available
+                              </div>
+                            ) : (
+                              activeTenants.map((t) => (
+                                <SelectItem key={t.tenant_id} value={t.tenant_id} className="text-xs cursor-pointer focus:bg-muted focus:text-foreground font-semibold">
+                                  {t.business_name} ({t.tenant_id})
+                                </SelectItem>
+                              ))
+                            )}
+                          </SelectContent>
+                        </Select>
                       </div>
-                    </div>
-                  )}
+                    )}
+
+                    {assignmentType === "UNASSIGNED" && (
+                      <div className="rounded-lg border border-dashed border-border p-4 bg-muted/30 text-center text-xs text-muted-foreground space-y-2 animate-in fade-in slide-in-from-top-1 duration-150 font-mono">
+                        <div>
+                          This machine will be registered but mapped to the platform root context. Its initial status will be <span className="font-semibold text-primary bg-primary/10 px-1.5 py-0.5 rounded">UNASSIGNED</span>.
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              {/* Action Footer */}
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-border/50">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setIsCreateOpen(false)}
-                  className="h-9 text-xs font-bold rounded-lg border-border hover:bg-muted cursor-pointer"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={isLoading}
-                  className="h-9 text-xs font-bold rounded-lg bg-primary text-primary-foreground hover:opacity-90 flex items-center gap-1.5 shadow-sm cursor-pointer"
-                >
-                  {isLoading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                  Confirm
-                </Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>
+                {/* Action Footer */}
+                <div className="flex items-center justify-end gap-3 pt-4 border-t border-border/50">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsCreateOpen(false)}
+                    className="h-9 text-xs font-bold rounded-lg border-border hover:bg-muted cursor-pointer"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={isLoading}
+                    className="h-9 text-xs font-bold rounded-lg bg-primary text-primary-foreground hover:opacity-90 flex items-center gap-1.5 shadow-sm cursor-pointer"
+                  >
+                    {isLoading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    Confirm
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
 
       {errorMsg && (
@@ -671,27 +682,31 @@ export function MachinesView() {
                           Configure Slots
                         </Button>
                       </motion.div>
-                      <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} className="inline-block">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleOpenEdit(machine)}
-                          className="h-8 text-xs font-bold rounded-lg border-border hover:bg-muted cursor-pointer flex items-center gap-1.5"
-                        >
-                          Edit
-                        </Button>
-                      </motion.div>
-                      <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} className="inline-block">
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          disabled={isLoading}
-                          onClick={() => handleUnassign(machine.machine_id)}
-                          className="h-8 text-xs font-bold rounded-lg flex items-center gap-1.5 bg-red-600 text-white hover:bg-red-700 shadow-sm cursor-pointer"
-                        >
-                          Unassign
-                        </Button>
-                      </motion.div>
+                      {role === "SUPER_ADMIN" && (
+                        <>
+                          <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} className="inline-block">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleOpenEdit(machine)}
+                              className="h-8 text-xs font-bold rounded-lg border-border hover:bg-muted cursor-pointer flex items-center gap-1.5"
+                            >
+                              Edit
+                            </Button>
+                          </motion.div>
+                          <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} className="inline-block">
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              disabled={isLoading}
+                              onClick={() => handleUnassign(machine.machine_id)}
+                              className="h-8 text-xs font-bold rounded-lg flex items-center gap-1.5 bg-red-600 text-white hover:bg-red-700 shadow-sm cursor-pointer"
+                            >
+                              Unassign
+                            </Button>
+                          </motion.div>
+                        </>
+                      )}
                     </div>
                   </TableCell>
                 </MotionTableRow>
@@ -702,86 +717,88 @@ export function MachinesView() {
       </div>
 
       {/* Unassigned Machines Table Grid */}
-      <div className="mt-10">
-        <h2 className="text-xl font-bold tracking-tight text-foreground mb-4">
-          Unassigned ({unassignedFleet.length})
-        </h2>
-        <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-sm">
-          <Table>
-            <TableHeader className="bg-muted/50">
-              <TableRow>
-                <TableHead className="font-bold text-muted-foreground">Machine ID</TableHead>
-                <TableHead className="font-bold text-muted-foreground">Tenant</TableHead>
-                <TableHead className="font-bold text-muted-foreground">Location</TableHead>
-                <TableHead className="font-bold text-muted-foreground">RXCXD</TableHead>
-                <TableHead className="font-bold text-muted-foreground">Capacity</TableHead>
-                <TableHead className="font-bold text-muted-foreground">Status</TableHead>
-                <TableHead className="font-bold text-muted-foreground text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <MotionTableBody variants={tableContainerVariants} initial="hidden" animate="show">
-              {unassignedFleet.length === 0 ? (
+      {role === "SUPER_ADMIN" && (
+        <div className="mt-10">
+          <h2 className="text-xl font-bold tracking-tight text-foreground mb-4">
+            Unassigned ({unassignedFleet.length})
+          </h2>
+          <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-sm">
+            <Table>
+              <TableHeader className="bg-muted/50">
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground font-medium font-mono text-xs">
-                    No unassigned warehouse hardware fleet registered yet.
-                  </TableCell>
+                  <TableHead className="font-bold text-muted-foreground">Machine ID</TableHead>
+                  <TableHead className="font-bold text-muted-foreground">Tenant</TableHead>
+                  <TableHead className="font-bold text-muted-foreground">Location</TableHead>
+                  <TableHead className="font-bold text-muted-foreground">RXCXD</TableHead>
+                  <TableHead className="font-bold text-muted-foreground">Capacity</TableHead>
+                  <TableHead className="font-bold text-muted-foreground">Status</TableHead>
+                  <TableHead className="font-bold text-muted-foreground text-right">Actions</TableHead>
                 </TableRow>
-              ) : (
-                unassignedFleet.map((machine) => (
-                  <MotionTableRow key={machine.machine_id} variants={rowVariants} className="hover:bg-muted/30">
-                    <TableCell className="font-bold text-foreground flex items-center gap-2 font-mono">
-                      <Cpu className="h-4 w-4 text-muted-foreground" />
-                      {machine.machine_id}
+              </TableHeader>
+              <MotionTableBody variants={tableContainerVariants} initial="hidden" animate="show">
+                {unassignedFleet.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground font-medium font-mono text-xs">
+                      No unassigned warehouse hardware fleet registered yet.
                     </TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground font-semibold">
-                      {machine.tenant_name || machine.tenant_id}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground font-medium text-xs">
-                      {machine.location || "N/A"}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground font-medium text-xs font-mono">
-                      {(machine.grid_config?.rows || 6)} x {(machine.grid_config?.columns || 8)} x {(machine.grid_config?.max_depth || 7)}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground font-medium text-xs font-mono">
-                      {(machine.grid_config?.rows || 6) * (machine.grid_config?.columns || 8) * (machine.grid_config?.max_depth || 7)}
-                    </TableCell>
-                    <TableCell>
-                      <span className="rounded-full bg-muted border border-border/50 px-2.5 py-0.5 text-xs font-semibold text-muted-foreground">
-                        Unassigned Warehouse
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} className="inline-block">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleOpenEdit(machine)}
-                            className="h-8 text-xs font-bold rounded-lg border-border hover:bg-muted cursor-pointer flex items-center gap-1.5"
-                          >
-                            Edit
-                          </Button>
-                        </motion.div>
-                        <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} className="inline-block">
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            disabled={isLoading}
-                            onClick={() => handleDeleteMachine(machine.machine_id)}
-                            className="h-8 text-xs font-bold rounded-lg flex items-center gap-1.5 bg-red-600 text-white hover:bg-red-700 shadow-sm cursor-pointer"
-                          >
-                            Delete
-                          </Button>
-                        </motion.div>
-                      </div>
-                    </TableCell>
-                  </MotionTableRow>
-                ))
-              )}
-            </MotionTableBody>
-          </Table>
+                  </TableRow>
+                ) : (
+                  unassignedFleet.map((machine) => (
+                    <MotionTableRow key={machine.machine_id} variants={rowVariants} className="hover:bg-muted/30">
+                      <TableCell className="font-bold text-foreground flex items-center gap-2 font-mono">
+                        <Cpu className="h-4 w-4 text-muted-foreground" />
+                        {machine.machine_id}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground font-semibold">
+                        {machine.tenant_name || machine.tenant_id}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground font-medium text-xs">
+                        {machine.location || "N/A"}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground font-medium text-xs font-mono">
+                        {(machine.grid_config?.rows || 6)} x {(machine.grid_config?.columns || 8)} x {(machine.grid_config?.max_depth || 7)}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground font-medium text-xs font-mono">
+                        {(machine.grid_config?.rows || 6) * (machine.grid_config?.columns || 8) * (machine.grid_config?.max_depth || 7)}
+                      </TableCell>
+                      <TableCell>
+                        <span className="rounded-full bg-muted border border-border/50 px-2.5 py-0.5 text-xs font-semibold text-muted-foreground">
+                          Unassigned Warehouse
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} className="inline-block">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleOpenEdit(machine)}
+                              className="h-8 text-xs font-bold rounded-lg border-border hover:bg-muted cursor-pointer flex items-center gap-1.5"
+                            >
+                              Edit
+                            </Button>
+                          </motion.div>
+                          <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} className="inline-block">
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              disabled={isLoading}
+                              onClick={() => handleDeleteMachine(machine.machine_id)}
+                              className="h-8 text-xs font-bold rounded-lg flex items-center gap-1.5 bg-red-600 text-white hover:bg-red-700 shadow-sm cursor-pointer"
+                            >
+                              Delete
+                            </Button>
+                          </motion.div>
+                        </div>
+                      </TableCell>
+                    </MotionTableRow>
+                  ))
+                )}
+              </MotionTableBody>
+            </Table>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Edit Machine Dialog Modal */}
       <Dialog open={isEditOpen} onOpenChange={(open) => {

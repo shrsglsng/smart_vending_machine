@@ -53,6 +53,7 @@ async function catalogRoutes(fastify, options) {
       let default_price_paise = 100; // Default price (₹1 / 100 paise) for UI entries
       let image_path = '';
       let isLegacyTest = false;
+      let zoom_level = 1.0;
 
       if (request.isMultipart()) {
         const parts = request.parts();
@@ -66,6 +67,9 @@ async function catalogRoutes(fastify, options) {
             if (part.fieldname === 'item_name') item_name = part.value;
             if (part.fieldname === 'item_description') item_description = part.value;
             if (part.fieldname === 'category') category = part.value;
+            if (part.fieldname === 'zoom_level') {
+              zoom_level = parseFloat(part.value) || 1.0;
+            }
             if (part.fieldname === 'default_price_paise') {
               default_price_paise = parseInt(part.value, 10);
             }
@@ -132,7 +136,7 @@ async function catalogRoutes(fastify, options) {
 
         try {
           await sharp(fileBuffer)
-            .resize(600, 600, { fit: 'cover' })
+            .resize(600, 600, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
             .webp({ quality: 80 })
             .toFile(localFilePath);
         } catch (sharpError) {
@@ -155,6 +159,9 @@ async function catalogRoutes(fastify, options) {
         const imageUrl = body.image_url;
         if (body.default_price_paise !== undefined) {
           default_price_paise = parseInt(body.default_price_paise, 10);
+        }
+        if (body.zoom_level !== undefined) {
+          zoom_level = parseFloat(body.zoom_level) || 1.0;
         }
 
         if (!item_name || !item_name.trim() || !item_description || !item_description.trim() || !imageUrl || !imageUrl.trim()) {
@@ -199,7 +206,8 @@ async function catalogRoutes(fastify, options) {
         item_description: item_description.trim(),
         category: cleanCategory,
         image_path,
-        default_price_paise
+        default_price_paise,
+        zoom_level
       });
 
       reply.status(201).send(catalogRecord);
@@ -223,6 +231,7 @@ async function catalogRoutes(fastify, options) {
       let item_description = '';
       let category = '';
       let default_price_paise = null;
+      let zoom_level = null;
       let image_path = '';
       let imageUrl = '';
       let fileBuffer = null;
@@ -237,6 +246,9 @@ async function catalogRoutes(fastify, options) {
             if (part.fieldname === 'item_name') item_name = part.value;
             if (part.fieldname === 'item_description') item_description = part.value;
             if (part.fieldname === 'category') category = part.value;
+            if (part.fieldname === 'zoom_level') {
+              zoom_level = parseFloat(part.value) || 1.0;
+            }
             if (part.fieldname === 'default_price_paise') {
               default_price_paise = parseInt(part.value, 10);
             }
@@ -251,6 +263,9 @@ async function catalogRoutes(fastify, options) {
         imageUrl = body.image_url;
         if (body.default_price_paise !== undefined) {
           default_price_paise = parseInt(body.default_price_paise, 10);
+        }
+        if (body.zoom_level !== undefined) {
+          zoom_level = parseFloat(body.zoom_level) || 1.0;
         }
       }
 
@@ -292,6 +307,9 @@ async function catalogRoutes(fastify, options) {
       if (default_price_paise !== null && !isNaN(default_price_paise)) {
         item.default_price_paise = default_price_paise;
       }
+      if (zoom_level !== null && !isNaN(zoom_level)) {
+        item.zoom_level = zoom_level;
+      }
 
       // Handle fileBuffer optimization if uploaded
       if (fileBuffer) {
@@ -308,7 +326,7 @@ async function catalogRoutes(fastify, options) {
         const localFilePath = path.join(outputDir, outputFilename);
 
         await sharp(fileBuffer)
-          .resize(600, 600, { fit: 'cover' })
+          .resize(600, 600, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
           .webp({ quality: 80 })
           .toFile(localFilePath);
 

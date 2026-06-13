@@ -7,11 +7,15 @@ const { logErrorLocal } = require('./utils/errorLogger');
 const config = require('./utils/config');
 const dbConnector = require('./services/db');
 
-// Ensure public uploads catalog directory exists on boot
-const uploadsDir = path.join(__dirname, '../public/uploads/catalog');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
+// Ensure public uploads directories exist on boot
+const uploadsRootDir = path.join(__dirname, '../public/uploads');
+const catalogDir = path.join(uploadsRootDir, 'catalog');
+const operatorsDir = path.join(uploadsRootDir, 'operators');
+[catalogDir, operatorsDir].forEach((dir) => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+});
 
 // Sentry tracking removed. Local file-based logging is initialized automatically on require.
 
@@ -57,8 +61,8 @@ fastify.register(require('@fastify/multipart'), {
 });
 
 fastify.register(require('@fastify/static'), {
-  root: uploadsDir,
-  prefix: '/uploads/catalog/',
+  root: uploadsRootDir,
+  prefix: '/uploads/',
 });
 
 // 6. Register Mongoose Connector Plugin

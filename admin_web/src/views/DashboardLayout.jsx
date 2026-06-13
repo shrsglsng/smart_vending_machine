@@ -11,6 +11,7 @@ import {
   Sun,
   Moon,
   Utensils,
+  UserCheck,
 } from "lucide-react"
 
 import { logout } from "../store/authSlice"
@@ -21,6 +22,8 @@ export function DashboardLayout() {
   const navigate = useNavigate()
   const location = useLocation()
   
+  const { role, tenant_id } = useSelector((state) => state.auth)
+
   // Dynamic Dark Mode State persisted to localStorage
   const [isDarkMode, setIsDarkMode] = React.useState(() => {
     return localStorage.getItem("theme") === "dark"
@@ -57,9 +60,10 @@ export function DashboardLayout() {
     {
       title: "Fleet & Access",
       items: [
-        { label: "Tenants", path: "/dashboard/tenants", icon: Building },
+        ...(role === "SUPER_ADMIN" ? [{ label: "Tenants", path: "/dashboard/tenants", icon: Building }] : []),
         { label: "Machines", path: "/dashboard/machines", icon: Cpu },
         { label: "Food items", path: "/dashboard/food-items", icon: Utensils },
+        { label: "Operators", path: "/dashboard/operators", icon: UserCheck },
       ],
     },
     {
@@ -132,10 +136,14 @@ export function DashboardLayout() {
 
         {/* Sidebar Footer Info (Tightly integrated, dynamic card) */}
         <div className="p-4 space-y-3">
-          <div className="rounded-xl border border-sidebar-border bg-sidebar-accent/40 p-3 flex flex-col gap-0.5">
+          <div className="rounded-xl border border-sidebar-border bg-sidebar-accent/40 p-3 flex flex-col gap-0.5 select-none">
             <p className="text-[9px] font-extrabold text-sidebar-foreground/40 uppercase tracking-widest font-mono">System Role</p>
-            <p className="text-xs font-extrabold text-primary font-mono">Super Admin</p>
-            <p className="text-[10px] font-medium text-sidebar-foreground/60 break-all truncate" title="aibotink.web@gmail.com">aibotink.web@gmail.com</p>
+            <p className="text-xs font-extrabold text-primary font-mono">
+              {role === "SUPER_ADMIN" ? "Super Admin" : "Tenant Admin"}
+            </p>
+            <p className="text-[10px] font-medium text-sidebar-foreground/60 break-all truncate" title={role === "SUPER_ADMIN" ? "aibotink.web@gmail.com" : tenant_id}>
+              {role === "SUPER_ADMIN" ? "aibotink.web@gmail.com" : tenant_id}
+            </p>
           </div>
 
           <motion.button

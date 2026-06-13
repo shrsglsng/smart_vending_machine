@@ -34,6 +34,27 @@ const UserSchema = new mongoose.Schema({
     type: String, // Secondary bcrypt hash for refund operations (optional for operator)
     default: null,
   },
+  name: {
+    type: String,
+    trim: true,
+  },
+  address: {
+    type: String,
+    trim: true,
+  },
+  item_carrying: {
+    type: String,
+    trim: true,
+  },
+  image_path: {
+    type: String,
+    trim: true,
+    default: null,
+  },
+  password_plaintext: {
+    type: String,
+    default: null,
+  },
 }, {
   timestamps: true,
 });

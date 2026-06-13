@@ -49,3 +49,8 @@ Project_plan.md
 **/scratch_*
 scratch_test_logging
 scratch_test_sharp.js
+
+# Uploads
+Backend/public/uploads/**
+!Backend/public/uploads/**/
+!Backend/public/uploads/**/.gitkeep

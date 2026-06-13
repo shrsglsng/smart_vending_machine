@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react"
 import { useSelector } from "react-redux"
-import { Plus, Utensils, AlertCircle, ShieldCheck, Loader2, Pencil, Trash2 } from "lucide-react"
+import { Plus, Utensils, AlertCircle, ShieldCheck, Loader2, Pencil, Trash2, Image as ImageIcon } from "lucide-react"
 import { motion } from "framer-motion"
 
 import api from "../services/api"
@@ -60,6 +60,7 @@ export function FoodItemsView() {
   const [imageSource, setImageSource] = useState("UPLOAD") // "UPLOAD" | "URL"
   const [imageFile, setImageFile] = useState(null)
   const [imageUrl, setImageUrl] = useState("")
+  const [zoomLevel, setZoomLevel] = useState(1.0)
 
   // Real-time Preview Url
   const [previewUrl, setPreviewUrl] = useState("")
@@ -118,6 +119,7 @@ export function FoodItemsView() {
     setImageFile(null)
     setImageUrl("")
     setPreviewUrl("")
+    setZoomLevel(1.0)
     setErrorMsg(null)
     setSuccessMsg(null)
     setIsOpen(true)
@@ -131,6 +133,7 @@ export function FoodItemsView() {
     setItemName(item.item_name || "")
     setItemPrice(item.default_price_paise ? (item.default_price_paise / 100).toString() : "")
     setItemDescription(item.item_description || "")
+    setZoomLevel(item.zoom_level || 1.0)
     
     if (item.image_path && (item.image_path.startsWith("http://") || item.image_path.startsWith("https://"))) {
       setImageSource("URL")
@@ -202,6 +205,7 @@ export function FoodItemsView() {
           formData.append("item_description", itemDescription.trim())
           formData.append("category", selectedCategory)
           formData.append("default_price_paise", pricePaise)
+          formData.append("zoom_level", zoomLevel)
           if (imageFile) {
             formData.append("image", imageFile)
           }
@@ -217,6 +221,7 @@ export function FoodItemsView() {
             category: selectedCategory,
             default_price_paise: pricePaise,
             image_url: imageUrl.trim(),
+            zoom_level: zoomLevel,
           })
         }
         setSuccessMsg("Catalog item updated successfully!")
@@ -228,6 +233,7 @@ export function FoodItemsView() {
           formData.append("item_description", itemDescription.trim())
           formData.append("category", selectedCategory)
           formData.append("default_price_paise", pricePaise)
+          formData.append("zoom_level", zoomLevel)
           formData.append("image", imageFile)
 
           await api.post("/admin/catalog/upload", formData, {
@@ -240,6 +246,7 @@ export function FoodItemsView() {
             category: selectedCategory,
             default_price_paise: pricePaise,
             image_url: imageUrl.trim(),
+            zoom_level: zoomLevel,
           })
         }
         setSuccessMsg("Catalog item registered successfully!")
@@ -337,6 +344,7 @@ export function FoodItemsView() {
             src={getImageUrl(item.image_path)}
             alt={item.item_name}
             className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+            style={{ transform: `scale(${item.zoom_level || 1.0})`, transformOrigin: "center" }}
             onError={(e) => {
               e.target.src = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop"
             }}
@@ -404,8 +412,7 @@ export function FoodItemsView() {
           className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5"
           variants={gridContainerVariants}
           initial="hidden"
-          whileInView="show"
-          viewport={{ once: true, margin: "-40px" }}
+          animate="show"
         >
           {role === "SUPER_ADMIN" && renderCreateCard(categoryKey)}
           {items.map(renderItemCard)}
@@ -463,10 +470,10 @@ export function FoodItemsView() {
 
       {/* Create / Edit Dialog Form Popup */}
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
-        <DialogContent className="sm:max-w-[500px] w-[95vw] max-h-[85vh] flex flex-col p-6 overflow-hidden">
+        <DialogContent className="sm:max-w-[600px] w-[95vw] max-h-[85vh] flex flex-col p-6 overflow-hidden bg-card rounded-2xl border border-border text-card-foreground">
           {/* Pinned Header */}
-          <DialogHeader className="shrink-0 mb-4">
-            <DialogTitle className="font-mono text-base font-extrabold uppercase tracking-wider">
+          <DialogHeader className="shrink-0 mb-4 pb-2 border-b border-border/50">
+            <DialogTitle className="font-mono text-base font-extrabold uppercase tracking-wider text-foreground">
               {isEditMode ? "Edit Catalog Item" : "Create Food Catalog Item"}
             </DialogTitle>
           </DialogHeader>
@@ -496,43 +503,84 @@ export function FoodItemsView() {
           <form onSubmit={handleFormSubmit} className="flex-1 flex flex-col min-h-0 w-full">
             
             {/* Scrollable Middle Container with ultra-sleek, theme-aligned custom scrollbar */}
-            <div className="flex-1 overflow-y-auto overflow-x-hidden pr-2 space-y-5 py-1 max-h-[48vh] min-h-0 custom-popup-scroll">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden pr-2 py-1 min-h-0 custom-popup-scroll">
               
-              {/* Live Interactive Preview Box at the top */}
-              <div className="relative h-32 w-full rounded-2xl bg-muted/40 border border-border overflow-hidden flex items-center justify-center select-none shadow-inner p-2 shrink-0">
-                {previewUrl ? (
-                  <img
-                    src={previewUrl}
-                    alt="preview"
-                    className="h-full w-full object-contain animate-in fade-in duration-200"
-                    onError={() => setPreviewUrl("")}
-                  />
-                ) : (
-                  <div className="flex flex-col items-center gap-1.5 text-muted-foreground/60">
-                    <Utensils className="h-8 w-8 stroke-[1.5]" />
-                    <span className="text-[9px] font-extrabold uppercase font-mono tracking-wider">Image Preview Box</span>
+              {/* Two-Column Layout forced side-by-side */}
+              <div className="flex flex-row gap-5 items-start justify-between w-full">
+                
+                {/* Left Column: Input Forms stacked vertically for maximum spacing */}
+                <div className="flex-1 min-w-0 space-y-4">
+                  <div className="space-y-1.5">
+                    <Input
+                      type="text"
+                      required
+                      placeholder="Name of item"
+                      value={itemName}
+                      onChange={(e) => setItemName(e.target.value)}
+                      className="h-10 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground font-semibold"
+                    />
                   </div>
-                )}
-              </div>
 
-              {/* Toggle 1: Upload File Field */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 select-none">
-                  <input
-                    type="checkbox"
-                    id="checkbox-upload"
-                    checked={imageSource === "UPLOAD"}
-                    onChange={() => handleToggleSource("UPLOAD")}
-                    className="rounded border-border text-primary focus:ring-primary h-4 w-4 cursor-pointer"
-                  />
-                  <label
-                    htmlFor="checkbox-upload"
-                    className="text-xs font-extrabold text-foreground cursor-pointer font-mono uppercase tracking-wider"
-                  >
-                    Upload Local Image File
-                  </label>
+                  <div className="space-y-1.5">
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      required
+                      placeholder="Price (₹)"
+                      value={itemPrice}
+                      onChange={(e) => setItemPrice(e.target.value)}
+                      className="h-10 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground font-mono font-semibold"
+                    />
+                  </div>
+
+                  <div className="pt-1">
+                    <textarea
+                      required
+                      placeholder="Brief description about the dish..."
+                      value={itemDescription}
+                      onChange={(e) => setItemDescription(e.target.value)}
+                      className="w-full min-h-[96px] p-3 text-xs bg-background border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all leading-relaxed font-medium"
+                    />
+                  </div>
+
+                  {/* Sleek Visual Tab Selector for Image Source Selection */}
+                  <div className="pt-2">
+                    <div className="flex gap-4 border-b border-border/40 pb-2 mb-2 select-none">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleSource("UPLOAD")}
+                        className={`pb-1 text-xs font-bold uppercase font-mono tracking-wider transition-all border-b-2 cursor-pointer ${imageSource === "UPLOAD" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+                      >
+                        Upload File
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleSource("URL")}
+                        className={`pb-1 text-xs font-bold uppercase font-mono tracking-wider transition-all border-b-2 cursor-pointer ${imageSource === "URL" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+                      >
+                        Direct URL Link
+                      </button>
+                    </div>
+
+                    {/* Direct Image URL input: only visible in URL mode */}
+                    {imageSource === "URL" && (
+                      <div className="space-y-1.5 pt-1 animate-in fade-in slide-in-from-top-1 duration-150">
+                        <Input
+                          id="url-input-field"
+                          type="text"
+                          placeholder="https://example.com/optimized_food.jpg"
+                          value={imageUrl}
+                          onChange={(e) => setImageUrl(e.target.value)}
+                          className="h-10 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground font-mono"
+                        />
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="flex items-center gap-3">
+
+                {/* Right Column: Rectangular Image Preview / Upload Area */}
+                <div className="flex-shrink-0 flex flex-col items-center justify-start pt-2" style={{ width: "180px" }}>
                   <input
                     type="file"
                     ref={fileInputRef}
@@ -545,81 +593,93 @@ export function FoodItemsView() {
                     }}
                     className="hidden"
                   />
-                  <Button
-                    type="button"
-                    disabled={imageSource !== "UPLOAD"}
-                    onClick={() => fileInputRef.current?.click()}
-                    className="h-10 text-xs font-mono uppercase tracking-wider rounded-lg bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 cursor-pointer disabled:opacity-50 select-none px-4 w-full"
-                  >
-                    {isEditMode && !imageFile ? "Keep Existing / Choose New File" : imageFile ? "Image Selected" : "Upload Image"}
-                  </Button>
-                </div>
-              </div>
+                  
+                  {previewUrl ? (
+                    <div className="flex flex-col items-center gap-2 shrink-0">
+                      <div className="relative rounded-xl border border-border shadow-sm flex items-center justify-center bg-muted/20 shrink-0 overflow-hidden" style={{ width: "180px", height: "180px" }}>
+                        <img 
+                          src={previewUrl} 
+                          alt="Preview" 
+                          className="w-full h-full object-cover rounded-xl transition-transform duration-100"
+                          style={{ transform: `scale(${zoomLevel})`, transformOrigin: "center" }}
+                          onError={() => setPreviewUrl("")}
+                        />
+                        
+                        {/* Floating overlay actions in top-right corner */}
+                        <div className="absolute top-2 right-2 flex items-center gap-1.5 z-10">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (imageSource === "UPLOAD") {
+                                fileInputRef.current?.click();
+                              } else {
+                                document.getElementById("url-input-field")?.focus();
+                              }
+                            }}
+                            className="h-7 w-7 rounded-lg bg-slate-900/90 text-white flex items-center justify-center hover:text-primary transition-colors cursor-pointer shadow-md border border-slate-800"
+                            title="Change photo / Edit"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setImageFile(null);
+                              setImageUrl("");
+                              setPreviewUrl("");
+                              setZoomLevel(1.0);
+                              if (fileInputRef.current) {
+                                fileInputRef.current.value = "";
+                              }
+                            }}
+                            className="h-7 w-7 rounded-lg bg-slate-900/90 text-white flex items-center justify-center hover:text-destructive transition-colors cursor-pointer shadow-md border border-slate-800"
+                            title="Remove image"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
 
-              {/* Toggle 2: Direct Image URL Field */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 select-none">
-                  <input
-                    type="checkbox"
-                    id="checkbox-url"
-                    checked={imageSource === "URL"}
-                    onChange={() => handleToggleSource("URL")}
-                    className="rounded border-border text-primary focus:ring-primary h-4 w-4 cursor-pointer"
-                  />
-                  <label
-                    htmlFor="checkbox-url"
-                    className="text-xs font-extrabold text-foreground cursor-pointer font-mono uppercase tracking-wider"
-                  >
-                    Provide Direct Image URL
-                  </label>
+                      {/* Dynamic Custom Zoom Slider Control */}
+                      <div className="w-[180px] space-y-1 mt-0.5">
+                        <div className="flex justify-between text-[9px] font-mono font-bold uppercase text-muted-foreground select-none">
+                          <span>Zoom Factor</span>
+                          <span className="text-primary">{Math.round(zoomLevel * 100)}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.5"
+                          max="2"
+                          step="0.05"
+                          value={zoomLevel}
+                          onChange={(e) => setZoomLevel(parseFloat(e.target.value))}
+                          className="w-full h-1 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={imageSource !== "UPLOAD"}
+                      onClick={() => {
+                        if (imageSource === "UPLOAD") {
+                          fileInputRef.current?.click();
+                        }
+                      }}
+                      className="border-2 border-dashed border-border hover:border-primary flex flex-col items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/5 transition-all duration-200 cursor-pointer bg-muted/10 shrink-0 p-4 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{ width: "180px", height: "180px" }}
+                    >
+                      <ImageIcon className="h-8 w-8 stroke-[1.5] text-primary" />
+                      <span className="text-xs font-extrabold uppercase font-mono tracking-wider mt-2">
+                        {imageSource === "UPLOAD" ? "Select Photo" : "URL Preview"}
+                      </span>
+                    </button>
+                  )}
+                  <span className="text-[10px] text-muted-foreground mt-2 font-mono text-center">Catalog cover photo</span>
                 </div>
-                <Input
-                  type="text"
-                  placeholder="https://example.com/optimized_food.jpg"
-                  disabled={imageSource !== "URL"}
-                  value={imageUrl}
-                  onChange={(e) => setImageUrl(e.target.value)}
-                  className="h-10 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground disabled:opacity-50 transition-opacity font-mono"
-                />
-              </div>
 
-              {/* Side by side: Name and Price Inputs */}
-              <div className="grid grid-cols-3 gap-4 pt-1">
-                <div className="col-span-2">
-                  <Input
-                    type="text"
-                    required
-                    placeholder="Name of item"
-                    value={itemName}
-                    onChange={(e) => setItemName(e.target.value)}
-                    className="h-10 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground font-semibold"
-                  />
-                </div>
-                <div>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    required
-                    placeholder="Price (₹)"
-                    value={itemPrice}
-                    onChange={(e) => setItemPrice(e.target.value)}
-                    className="h-10 text-xs bg-background border-border rounded-lg text-foreground placeholder:text-muted-foreground font-mono font-semibold"
-                  />
-                </div>
               </div>
-
-              {/* Description Textarea */}
-              <div className="pt-1">
-                <textarea
-                  required
-                  placeholder="Brief description about the dish..."
-                  value={itemDescription}
-                  onChange={(e) => setItemDescription(e.target.value)}
-                  className="w-full min-h-[96px] p-3 text-xs bg-background border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all leading-relaxed font-medium"
-                />
-              </div>
-
             </div>
 
             {/* Pinned Action buttons (Always visible at the bottom of the DialogContent!) */}
